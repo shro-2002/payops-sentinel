@@ -385,6 +385,8 @@ def fresh_ai_runs(n: int):
 
 
 def main(ai_n: int):
+    assert engine.url.database == "payops_eval", f"refusing to rebuild {engine.url.database!r}"
+    Base.metadata.drop_all(engine)  # eval-only DB: always rebuild so schema changes never break a run
     Base.metadata.create_all(engine)
     det, rc, det_metrics = section_detection_and_baseline()
     safety = safety_cases()

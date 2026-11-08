@@ -38,6 +38,8 @@ Hard rules:
   rate fields. Do not round rates
   beyond 4 decimals; you may state rates as a fraction (0.3125) or percent ("31.25%").
 - If evidence is insufficient, say so in `uncertainty` and lower confidence.
+- paypal_order_lookup reads PayPal's own record for a REAL sandbox capture (the ledger's synthetic history has no
+  PayPal object). Use it when a specific real transaction matters to the conclusion; it costs one tool call.
 You have at most {max_calls} tool calls in total; calls beyond the budget are refused. Each result reports
 tool_budget_remaining. Spend calls on the most informative queries first."""
 

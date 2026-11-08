@@ -53,6 +53,23 @@ Claude: primary root cause 5/5, mean cause recall 1.0, claim faithfulness 70/70,
 8 tool calls every run, ~23 s, ~$0.11/run (list price $4/M in, $20/M out).
 Baseline on the same 5: primary 3/5, mean cause recall 0.6 (misses multi-cause and channel), $0, ~15 ms.
 
+### D3. Re-run after adding the read-only PayPal Agent Toolkit lookup (2026-11-08, same 5 scenarios, budget 8)
+| Metric (mean over 5) | Before toolkit | With toolkit tool |
+|---|---|---|
+| Primary root cause | 5/5 | 5/5 |
+| Cause recall | 1.0 | 1.0 |
+| Claims verified | 70/70 | 58/58 |
+| False-positive secondary causes | 1 (region_outage: ParcelOne) | 1 (same) |
+| Latency | 23.5 s | 21.9 s |
+| Tokens in / out | 13,794 / 2,644 | 14,462 / 2,450 |
+| Est. cost per run | $0.108 | $0.107 |
+
+No accuracy change. Input grew ~670 tokens/run (one more tool definition). The frozen scenarios are synthetic and
+contain no PayPal objects, so `paypal_order_lookup` has nothing to check there; it is exercised on the real sandbox
+captures of the demo world (live check 2026-11-08: wallet capture 9B331595R1964673U and refunded card capture
+26N72420GP068431A both matched PayPal's record, including the $12.00 refund). Run-to-run variance at n=5 means the
+latency/claim-count differences are not meaningful.
+
 ### The region_outage false positive (checked 2026-11-08)
 Claude named ParcelOne as a secondary cause alongside APAC. Cross-tab of the frozen scenario's current window:
 

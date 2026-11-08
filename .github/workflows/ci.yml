@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m venv .venv && .venv/bin/pip install -r requirements.txt pip-audit==2.9.0
+      - run: python -m venv .venv && .venv/bin/pip install -r requirements.txt pip-audit==2.9.0 && .venv/bin/pip install --no-deps -r requirements-toolkit.txt
       - run: .venv/bin/pytest
         env:
           DATABASE_URL: postgresql+psycopg://payops:payops_local@localhost:5433/payops_test

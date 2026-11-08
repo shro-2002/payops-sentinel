@@ -184,6 +184,41 @@ def list_related_events(s: Session, inc: Incident, args: dict) -> dict:
          "processing": e.processing_status} for e in events]}
 
 
+def paypal_order_lookup(s: Session, inc: Incident, args: dict) -> dict:
+    """Cross-check one REAL ledger capture against PayPal's own order record (PayPal Agent Toolkit, read-only)."""
+    from decimal import Decimal
+
+    from app.integrations.paypal.toolkit_readonly import order_snapshot
+    cid = args.get("capture_id")
+    if not isinstance(cid, str) or not CAPTURE_ID_RE.fullmatch(cid):
+        raise ToolArgumentError("capture_id must be a PayPal capture id")
+    cap = s.scalars(select(Capture).where(Capture.provider_capture_id == cid)).first()
+    if cap is None:
+        return {"capture_id": cid, "found_in_ledger": False}
+    if cap.origin == "SYNTHETIC" or not cap.provider_order_id:
+        return {"capture_id": cid, "found_in_ledger": True, "paypal_lookup": "not_applicable",
+                "reason": "synthetic history row: there is no PayPal object to check"}
+    ledger = {"status": cap.status, "amount": to_str(cap.amount_minor, cap.currency),
+              "refunded": to_str(cap.refunded_minor, cap.currency), "currency": cap.currency,
+              "funding_source": cap.funding_source}
+    try:
+        snap = order_snapshot(cap.provider_order_id)
+    except Exception as e:  # provider/network failure is reported as data, never guessed
+        return {"capture_id": cid, "ledger": ledger, "paypal_lookup": "failed", "error": type(e).__name__}
+    pp_cap = next((c for c in snap["captures"] if c["id"] == cid), None)
+    refunded = sum((Decimal(r["value"]) for r in snap["refunds"] if r["status"] == "COMPLETED" and r["value"]),
+                   Decimal("0"))
+    paypal_refunded = f"{refunded:.2f}"
+    return {"capture_id": cid, "order_id": snap["order_id"], "ledger": ledger,
+            "paypal": {"order_status": snap["order_status"], "payment_source": snap["payment_source"],
+                       "capture_status": pp_cap and pp_cap["status"], "capture_amount": pp_cap and pp_cap["value"],
+                       "refunded_total": paypal_refunded, "refund_count": len(snap["refunds"])},
+            "comparison": {"capture_found_at_paypal": pp_cap is not None,
+                           "status_matches": bool(pp_cap) and pp_cap["status"] == cap.status,
+                           "amount_matches": bool(pp_cap) and pp_cap["value"] == ledger["amount"],
+                           "refunded_matches": paypal_refunded == ledger["refunded"]}}
+
+
 TOOLS: dict[str, Callable[[Session, Incident, dict], dict]] = {
     "get_incident_context": get_incident_context,
     "slice_metric": slice_metric,
@@ -193,6 +228,7 @@ TOOLS: dict[str, Callable[[Session, Incident, dict], dict]] = {
     "cross_slice": cross_slice,
     "get_transaction": get_transaction,
     "list_related_events": list_related_events,
+    "paypal_order_lookup": paypal_order_lookup,
 }
 
 TOOL_SPECS = [
@@ -222,6 +258,11 @@ TOOL_SPECS = [
      "parameters": {"type": "object", "properties": {"capture_id": {"type": "string"}},
                     "required": ["capture_id"]}},
     {"name": "list_related_events", "description": "Provider events recorded for a capture.",
+     "parameters": {"type": "object", "properties": {"capture_id": {"type": "string"}},
+                    "required": ["capture_id"]}},
+    {"name": "paypal_order_lookup",
+     "description": "Read-only PayPal Agent Toolkit lookup: compare one REAL (sandbox) ledger capture with PayPal's "
+                    "own order record (status, amount, refunds). Not applicable to synthetic history rows.",
      "parameters": {"type": "object", "properties": {"capture_id": {"type": "string"}},
                     "required": ["capture_id"]}},
 ]

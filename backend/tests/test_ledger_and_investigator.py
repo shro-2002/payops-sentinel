@@ -1,9 +1,10 @@
 import pytest
 from sqlalchemy import func, select
 
-from app.db.models import AgentToolCall, Capture, EvidenceRecord, Finding, LedgerEntry, PayPalEvent, Refund
+from app.db.models import InvestigationRun, AgentToolCall, Capture, EvidenceRecord, Finding, LedgerEntry, PayPalEvent, Refund
 from app.detection.refund_rate import run_detector
 from app.investigator.agent import run_ai_investigation
+from app.investigator.evidence import execute_tool
 from app.investigator.tools import TOOLS
 from app.ledger.ingest import CaptureDims, ingest_event, upsert_capture, upsert_refund
 from app.ledger.synthetic import SCENARIOS, seed
@@ -103,10 +104,12 @@ def _incident(db, name="partner_and_sku"):
 def test_investigator_has_no_write_tools():
     import pathlib
     assert set(TOOLS) == {"get_incident_context", "slice_metric", "top_contributors", "compare_windows",
-                          "refund_reasons", "cross_slice", "get_transaction", "list_related_events"}
+                          "refund_reasons", "cross_slice", "get_transaction", "list_related_events",
+                          "paypal_order_lookup"}
     src = "".join(p.read_text() for p in pathlib.Path("app/investigator").glob("*.py"))
     import re
-    patterns = [r"PayPalClient", r"app\.actions", r"refund_capture", r"\.add\(Capture", r"\btext\(", r"\.delete\(",
+    patterns = [r"PayPalClient", r"app\.actions", r"refund_capture", r"integrations\.paypal\.client",
+                r"import paypal_agent_toolkit", r"from paypal_agent_toolkit", r"\.add\(Capture", r"\btext\(", r"\.delete\(",
                 r"insert\("]
     for pat in patterns:
         assert not re.search(pat, src), pat
@@ -376,3 +379,54 @@ def test_replay_mode_reexecutes_tools_and_reverifies_claims(db):
     f = db.scalars(select(Finding).where(Finding.investigation_id == run.id)).one()
     assert f.verified_claim_count + f.unsupported_claim_count == len(llm._final["claims"])
     assert (run.input_tokens, run.output_tokens) == (0, 0)  # no LLM was called
+
+
+# ---- PayPal Agent Toolkit: read-only by construction ----------------------------------------------
+def test_toolkit_exposes_only_read_tools():
+    from paypal_agent_toolkit.shared.tools import tools as all_toolkit_tools
+    from app.integrations.paypal import toolkit_readonly as tk
+    assert set(tk.READ_ONLY_TOOLS) == {"get_order_details"}
+    write_capable = [t["method"] for t in all_toolkit_tools
+                     if any(v not in tk.READ_VERBS for p in t["actions"].values() for v, on in p.items() if on)]
+    assert {"create_order", "pay_order", "cancel_subscription", "accept_dispute_claim", "send_invoice"} <= set(
+        write_capable)
+    assert not set(write_capable) & set(tk.READ_ONLY_TOOLS)
+    for method in write_capable + ["list_transactions", "get_merchant_insights"]:
+        with pytest.raises(PermissionError):
+            tk.run_readonly(method, {})  # refused before any network call
+
+
+def test_toolkit_configuration_enables_no_write_action():
+    from app.integrations.paypal.toolkit_readonly import READ_ONLY_CONFIGURATION, READ_VERBS
+    enabled = {(p, v) for p, acts in READ_ONLY_CONFIGURATION.actions.items() for v, on in acts.items() if on}
+    assert enabled == {("orders", "get")} and all(v in READ_VERBS for _, v in enabled)
+    assert READ_ONLY_CONFIGURATION.context.sandbox is True
+
+
+def test_paypal_order_lookup_cross_checks_ledger_and_feeds_claims(db, monkeypatch):
+    from app.integrations.paypal import toolkit_readonly
+    from app.investigator.evidence import Claim, check_claim
+    cap = upsert_capture(db, CAP_PAYLOAD, dims=CaptureDims(), origin="SANDBOX_LIVE", order_id="ORDERX1234567890AB")
+    db.commit()
+    monkeypatch.setattr(toolkit_readonly, "order_snapshot", lambda oid: {
+        "order_id": oid, "order_status": "COMPLETED", "payment_source": "paypal",
+        "captures": [{"id": cap.provider_capture_id, "status": "COMPLETED", "value": "20.00", "currency": "USD"}],
+        "refunds": [{"id": "R1", "status": "COMPLETED", "value": "5.00", "currency": "USD"}]})
+    inc = _incident(db, "single_partner")
+    run = InvestigationRun(incident_id=inc.id, mode="AI", status="RUNNING", max_tool_calls=8, trace=[])
+    db.add(run)
+    db.flush()
+    call = execute_tool(db, run, inc, "paypal_order_lookup", {"capture_id": cap.provider_capture_id})
+    assert call.status == "OK", call.error
+    assert call.result["comparison"]["refunded_matches"] is False  # ledger 0.00 vs PayPal 5.00: discrepancy found
+    assert call.result["paypal"]["refunded_total"] == "5.00"
+    good = Claim(statement="PayPal shows 5.00 refunded", query_id=call.query_id,
+                 metric_path="paypal/refunded_total", value="5.00")
+    flag = Claim(statement="ledger and PayPal refunds disagree", query_id=call.query_id,
+                 metric_path="comparison/refunded_matches", value="false")
+    lie = Claim(statement="PayPal shows nothing refunded", query_id=call.query_id,
+                metric_path="paypal/refunded_total", value="0.00")
+    by_qid = {call.query_id: call}
+    assert [check_claim(c, by_qid)[0] for c in (good, flag, lie)] == ["VERIFIED", "VERIFIED", "UNSUPPORTED"]
+    synthetic = execute_tool(db, run, inc, "paypal_order_lookup", {"capture_id": "SYNSIN000001"})
+    assert synthetic.result["paypal_lookup"] == "not_applicable"

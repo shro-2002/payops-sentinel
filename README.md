@@ -59,6 +59,23 @@ Refund capture (partial, idempotent `PayPal-Request-Id`) · Get refund · Webhoo
 widgets** registered with `createWidgets`, persistent user layouts via `onStateUpdated`, dark theme via
 `studioTheme.withParams`, edit/view modes. Not yet: the AG Studio AI module (P1).
 
+## PayPal Agent Toolkit: read-only by design
+The investigator can cross-check a real ledger row against PayPal's own record through PayPal's Agent Toolkit
+(`paypal-agent-toolkit` 1.11.0, Python), wrapped in `backend/app/integrations/paypal/toolkit_readonly.py`:
+- **Exposed:** one action, `orders.get` (`get_order_details`), surfaced as the investigator tool `paypal_order_lookup`.
+  It returns PayPal's order status, capture status/amount and refunds next to the ledger's values, plus match flags.
+  Claims citing it go through the same claim check as every other number.
+- **Not exposed:** every money-moving or state-changing toolkit action (`create_order`, `pay_order`, invoices,
+  subscriptions, dispute acceptance, shipment updates…). Transaction Search (`list_transactions`) is also off — it lags
+  or returns empty in sandbox.
+- **Enforced three ways:** the toolkit's own `Configuration` enables only `orders.get`; our tool set is built from the
+  toolkit registry through its `is_tool_allowed` and refuses any tool tagged with a non-read verb; a dispatcher refuses
+  every other method before any network call (the toolkit's own `PayPalAPI.run()` would execute *any* method, so it is
+  never used). Tests assert all of this, and the investigator package cannot import the write-capable REST client.
+- **Why refunds don't go through the toolkit:** an LLM holding a refund tool can be talked into using it. Here the AI
+  only *drafts* a typed proposal; money moves only after 15 deterministic policy checks, a human approval bound to the
+  exact action's hash, a fresh PayPal read-back, and webhook/GET verification.
+
 ## Evaluation (measured 2026-11-08, `python -m evals.run_eval`)
 24 frozen scenarios. Detection precision 1.0 / recall 1.0 (5 true incidents, 3 must-not-alert cases incl. tiny
 sample and stable-high seasonality). Safety & reliability 16/16 — prompt injection, over-refund, wrong target,
@@ -85,6 +102,7 @@ Edit `.env`: set `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `OPERATOR_TOKEN` (a
 ```bash
 docker compose up -d db
 cd backend && python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/pip install --no-deps -r requirements-toolkit.txt   # PayPal Agent Toolkit, without its framework deps
 .venv/bin/alembic upgrade head
 .venv/bin/python -m scripts.bootstrap_demo --reset   # creates 3 REAL sandbox captures + labelled synthetic history
 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8100

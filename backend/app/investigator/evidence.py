@@ -129,7 +129,10 @@ def check_claim(claim: Claim, calls_by_qid: dict[str, AgentToolCall]) -> tuple[s
         claimed, is_pct = _num(claim.value)
         src = Decimal(str(source))
     except InvalidOperation:
-        ok = str(source).strip() == claim.value.strip()
+        if isinstance(source, bool):  # booleans: "true"/"True" are the same fact
+            ok = claim.value.strip().lower() == str(source).lower()
+        else:
+            ok = str(source).strip() == claim.value.strip()
         return ("VERIFIED" if ok else "UNSUPPORTED"), str(source)[:64], None if ok else "value mismatch"
     if is_pct:
         if not parts[-1].endswith(RATE_LEAVES):
