@@ -3,4 +3,4 @@
 # Only the framework-neutral shared layer is used, restricted to read actions (see app/integrations/paypal/toolkit_readonly.py).
 paypal-agent-toolkit==1.11.0
 requests==2.34.2
-python-dotenv==1.1.0
+python-dotenv==1.2.4
