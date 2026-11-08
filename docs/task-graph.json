@@ -1,0 +1,257 @@
+{
+  "version": 1,
+  "rules": "Edge only when the downstream task consumes the upstream output. Max 3 implementation workers + 2 verifiers. One writer per file set. Max 2 automatic repair attempts per failure, then change strategy.",
+  "tasks": [
+    {
+      "id": "G0",
+      "title": "Repo & environment inspection",
+      "depends_on": [],
+      "parallel": false,
+      "owns": [
+        "(read-only)"
+      ],
+      "inputs": "repo, toolchain",
+      "outputs": "env readiness: py3.12, node 26, docker, pg16, PayPal OAuth OK, Gemini key",
+      "acceptance": "OAuth 200 without printing secrets",
+      "failure": "missing credentials",
+      "verifier": "integration owner",
+      "status": "done",
+      "evidence": "API_FEASIBILITY #1"
+    },
+    {
+      "id": "G1",
+      "title": "Shared contracts & schema",
+      "depends_on": [
+        "G0"
+      ],
+      "parallel": false,
+      "owns": [
+        "backend/app/db/models.py",
+        "backend/alembic/",
+        "docs/adr/"
+      ],
+      "inputs": "product spec",
+      "outputs": "SQLAlchemy models, migrations, ADR-001",
+      "acceptance": "alembic upgrade head creates 15 tables with FKs/constraints",
+      "failure": "float money, JSON-blob workflow",
+      "verifier": "V1",
+      "status": "done",
+      "evidence": "migrations 52090277ad13, 517a312dae06"
+    },
+    {
+      "id": "SPIKE",
+      "title": "PayPal sandbox feasibility spike",
+      "depends_on": [
+        "G0"
+      ],
+      "parallel": true,
+      "owns": [
+        "backend/app/integrations/paypal/"
+      ],
+      "inputs": "credentials",
+      "outputs": "verified order/capture/refund/idempotency",
+      "acceptance": "real sandbox ids recorded",
+      "failure": "buyer approval impossible",
+      "verifier": "integration owner",
+      "status": "done",
+      "evidence": "API_FEASIBILITY #2-#9"
+    },
+    {
+      "id": "G2A",
+      "title": "PayPal client",
+      "depends_on": [
+        "SPIKE"
+      ],
+      "parallel": true,
+      "owns": [
+        "backend/app/integrations/paypal/"
+      ],
+      "inputs": "spike",
+      "outputs": "PayPalClient with typed retry classes",
+      "acceptance": "live calls succeed; sandbox-only lock",
+      "failure": "new idempotency key on retry",
+      "verifier": "V1,V2",
+      "status": "done",
+      "evidence": "client.py; live Journey B"
+    },
+    {
+      "id": "G2B",
+      "title": "Ledger, ingestion, detection, synthetic data",
+      "depends_on": [
+        "G1"
+      ],
+      "parallel": true,
+      "owns": [
+        "backend/app/ledger/",
+        "backend/app/detection/"
+      ],
+      "inputs": "schema",
+      "outputs": "idempotent ingest, detector, 8 scenarios",
+      "acceptance": "detector matches ground truth on 8/8",
+      "failure": "duplicate entries; status regression",
+      "verifier": "V1",
+      "status": "done",
+      "evidence": "tests/test_detection_and_baseline.py, test_ledger_and_investigator.py"
+    },
+    {
+      "id": "G2C",
+      "title": "AG Studio operations console",
+      "depends_on": [
+        "G1"
+      ],
+      "parallel": true,
+      "owns": [
+        "frontend/"
+      ],
+      "inputs": "API contract",
+      "outputs": "Next.js console, custom Studio widgets, token-safe proxy",
+      "acceptance": "typecheck+build pass; renders live data; token not in bundle",
+      "failure": "invented AG Studio API",
+      "verifier": "V1 (product), integration owner",
+      "status": "done",
+      "evidence": "worker report: build/typecheck/token-check/Playwright pass"
+    },
+    {
+      "id": "V1",
+      "title": "Correctness verification",
+      "depends_on": [
+        "G2A",
+        "G2B",
+        "G4",
+        "G5"
+      ],
+      "parallel": true,
+      "owns": [
+        "(read-only)"
+      ],
+      "inputs": "code + tests",
+      "outputs": "findings report",
+      "acceptance": "each finding reproduced or retested",
+      "failure": "-",
+      "verifier": "independent agent",
+      "status": "done",
+      "evidence": "docs/VERIFICATION.md"
+    },
+    {
+      "id": "V2",
+      "title": "Security verification",
+      "depends_on": [
+        "G2A",
+        "G2B",
+        "G4",
+        "G5"
+      ],
+      "parallel": true,
+      "owns": [
+        "(read-only)"
+      ],
+      "inputs": "code + running API",
+      "outputs": "findings report",
+      "acceptance": "bypass attempts documented",
+      "failure": "-",
+      "verifier": "independent agent",
+      "status": "done",
+      "evidence": "docs/VERIFICATION.md"
+    },
+    {
+      "id": "G4",
+      "title": "AI investigator + evidence validation + baseline",
+      "depends_on": [
+        "G2B"
+      ],
+      "parallel": false,
+      "owns": [
+        "backend/app/investigator/"
+      ],
+      "inputs": "ledger + detection",
+      "outputs": "bounded tool loop, claim checker, baseline",
+      "acceptance": "live run completes; claims verified; fakes rejected",
+      "failure": "model-authored SQL; unverified numbers shown as verified",
+      "verifier": "V1,V2",
+      "status": "done",
+      "evidence": "live run 10/10 claims; tests"
+    },
+    {
+      "id": "G5",
+      "title": "Policy, approval, execution",
+      "depends_on": [
+        "G2A",
+        "G2B",
+        "G4"
+      ],
+      "parallel": false,
+      "owns": [
+        "backend/app/policy/",
+        "backend/app/actions/"
+      ],
+      "inputs": "ledger, client, finding schema",
+      "outputs": "state machine, single-use claim, revalidation",
+      "acceptance": "21 money-path tests; live refund verified",
+      "failure": "double execution; approval not bound",
+      "verifier": "V2",
+      "status": "done",
+      "evidence": "tests/test_actions_policy.py; refund 1Y397979BV657782S"
+    },
+    {
+      "id": "G6",
+      "title": "End-to-end integration (API + UI + journeys)",
+      "depends_on": [
+        "G4",
+        "G5",
+        "G2C"
+      ],
+      "parallel": false,
+      "owns": [
+        "backend/app/api/",
+        "backend/scripts/"
+      ],
+      "inputs": "all",
+      "outputs": "Journeys A/B/C reproducible",
+      "acceptance": "journeys pass via API and UI",
+      "failure": "-",
+      "verifier": "integration owner + Playwright",
+      "status": "in_progress",
+      "evidence": "Journeys A/B/C via API done; UI pending"
+    },
+    {
+      "id": "G7",
+      "title": "Evaluation & adversarial testing",
+      "depends_on": [
+        "G6"
+      ],
+      "parallel": false,
+      "owns": [
+        "backend/evals/",
+        "reports/"
+      ],
+      "inputs": "integrated system",
+      "outputs": "evaluation-results.json, EVALUATION.md",
+      "acceptance": ">=12 scenarios executed; 0 unauthorized executions",
+      "failure": "invented numbers",
+      "verifier": "integration owner",
+      "status": "in_progress",
+      "evidence": "24 scenarios run 2026-11-08"
+    },
+    {
+      "id": "G8",
+      "title": "Demo, docs, submission readiness",
+      "depends_on": [
+        "G7",
+        "V1",
+        "V2"
+      ],
+      "parallel": false,
+      "owns": [
+        "README.md",
+        "docs/"
+      ],
+      "inputs": "verified app",
+      "outputs": "README, demo script, Devpost text",
+      "acceptance": "release gate matrix",
+      "failure": "claims unbuilt features",
+      "verifier": "product verifier",
+      "status": "pending",
+      "evidence": "-"
+    }
+  ]
+}

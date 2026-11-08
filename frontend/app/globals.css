@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: #070b14;
+  color: #e6ecf5;
+}
+
+body {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+@layer components {
+  .badge {
+    @apply inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] font-semibold uppercase leading-none tracking-wide;
+  }
+  .badge-ok {
+    @apply border-ok/40 bg-ok/10 text-ok;
+  }
+  .badge-warn {
+    @apply border-warn/40 bg-warn/10 text-warn;
+  }
+  .badge-bad {
+    @apply border-bad/40 bg-bad/10 text-bad;
+  }
+  .badge-info {
+    @apply border-accent/40 bg-accent/10 text-accent;
+  }
+  .badge-neutral {
+    @apply border-line bg-ink-800 text-fg-muted;
+  }
+  .btn {
+    @apply inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply bg-accent-strong text-ink-950 hover:bg-accent;
+  }
+  .btn-danger {
+    @apply border border-bad/50 text-bad hover:bg-bad/10;
+  }
+  .btn-ghost {
+    @apply border border-line text-fg hover:border-accent/60 hover:bg-ink-800;
+  }
+  .panel {
+    @apply rounded-lg border border-line bg-ink-900;
+  }
+  .panel-title {
+    @apply text-xs font-semibold uppercase tracking-wider text-fg-muted;
+  }
+  .field {
+    @apply w-full rounded-md border border-line bg-ink-950 px-2 py-1.5 text-sm text-fg placeholder:text-fg-faint;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

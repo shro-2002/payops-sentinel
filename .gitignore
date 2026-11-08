@@ -1,0 +1,32 @@
+# Secrets: never commit
+.env
+.env.*
+!.env.example
+
+# Raw sandbox API logs from early experiments (redacted evidence lives in evidence/)
+smoke/results/
+
+# Local tooling / build output
+.remember/
+.claude/
+__pycache__/
+*.pyc
+.pytest_cache/
+web/node_modules/
+web/.next/
+web/next-env.d.ts
+*.tsbuildinfo
+.DS_Store
+
+# Browser automation scratch
+.playwright-mcp/
+
+# One-command local demo state (random secrets, logs, pids)
+.local-demo/
+
+# node_modules lives in a .nosync folder (iCloud corrupts node_modules inside synced folders); the symlink and the folder are local
+node_modules
+deps.nosync
+
+# PayOps Sentinel
+backend/.venv/

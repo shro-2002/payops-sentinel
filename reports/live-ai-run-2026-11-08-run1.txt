@@ -1,0 +1,33 @@
+Live AI investigation — console transcript copied verbatim from `python -m scripts.run_ai_once AI`
+Date: 2026-11-08 (~11:00 IST). Model: gemini-2.5-flash (google-genai 1.16.1). Incident: "Refund rate 21.7% vs 3.4%
+baseline (20 refunds / 92 captures)", scenario partner_and_sku (synthetic history + 3 live sandbox captures).
+The DB rows for this run were lost in the 11:17 IST test-isolation incident (see docs/VERIFICATION.md); this file is
+the surviving record. Earlier attempts the same day: 2 runs FAILED closed on schema validation (numeric claim value;
+confidence "medium-high"), which led to the typed response_schema change.
+
+status COMPLETED calls 9 latency_ms 18687 tokens 6740 3616 err
+  Q1 get_incident_context {} OK
+  Q2 top_contributors {"limit": 3, "dimension": "fulfillment_partner"} OK
+  Q3 top_contributors {"limit": 3, "dimension": "product_sku"} OK
+  Q4 top_contributors {"limit": 3, "dimension": "region"} OK
+  Q5 top_contributors {"limit": 3, "dimension": "channel"} OK
+  Q6 top_contributors {"limit": 3, "dimension": "product_category"} OK
+  Q7 refund_reasons {"value": "SwiftShip-EU", "dimension": "fulfillment_partner"} OK
+  Q8 refund_reasons {"value": "HDPH-200", "dimension": "product_sku"} OK
+  Q9 refund_reasons {"value": "EU", "dimension": "region"} REJECTED   (tool budget of 8 exhausted)
+ROOT {'dimension': 'fulfillment_partner', 'value': 'SwiftShip-EU'} conf high action MANUAL_REVIEW verified 10 unsupported 0
+SECONDARY [{"dimension": "product_sku", "value": "HDPH-200"}]
+Claims (all VERIFIED against the stored tool result of the cited query id):
+  Q1 current/rate 0.2174
+  Q2 by_value/SwiftShip-EU/current_rate 0.3111
+  Q7 by_reason/ITEM_NOT_RECEIVED 12
+  Q3 by_value/HDPH-200/current_rate 0.3793
+  Q8 by_reason/DEFECTIVE 6
+  Q8 by_reason/ITEM_NOT_RECEIVED 5
+  Q4 by_value/EU/current_rate 0.3256
+  Q4 by_value/EU/current_refunds 14
+  Q2 by_value/SwiftShip-EU/current_refunds 14
+  Q6 by_value/electronics/current_rate 0.2549
+Ground truth (scenario definition): fulfillment_partner=SwiftShip-EU AND product_sku=HDPH-200 -> primary correct,
+cause recall 2/2. Note: the prose explanation also mentioned "70.35% of excess refunds (Q2)", which was NOT submitted
+as a structured claim and therefore is not counted as verified.

@@ -1,0 +1,217 @@
+{
+  "model": "claude-opus-5-5",
+  "recorded_at": "2026-11-08T06:27:03.772135+00:00",
+  "source_investigation_id": "461b1fdf-8094-4f59-8d1e-4685c339adfe",
+  "note": "Recorded live Claude investigation. Replayed tool calls run against the current database; claims are re-verified on replay.",
+  "turns": [
+    [
+      {
+        "name": "get_incident_context",
+        "args": {}
+      },
+      {
+        "name": "top_contributors",
+        "args": {
+          "limit": 5,
+          "dimension": "fulfillment_partner"
+        }
+      },
+      {
+        "name": "top_contributors",
+        "args": {
+          "limit": 5,
+          "dimension": "product_sku"
+        }
+      },
+      {
+        "name": "top_contributors",
+        "args": {
+          "limit": 5,
+          "dimension": "region"
+        }
+      },
+      {
+        "name": "top_contributors",
+        "args": {
+          "limit": 5,
+          "dimension": "channel"
+        }
+      },
+      {
+        "name": "top_contributors",
+        "args": {
+          "limit": 5,
+          "dimension": "product_category"
+        }
+      }
+    ],
+    [
+      {
+        "name": "cross_slice",
+        "args": {
+          "by": "product_sku",
+          "value": "SwiftShip-EU",
+          "dimension": "fulfillment_partner"
+        }
+      },
+      {
+        "name": "cross_slice",
+        "args": {
+          "by": "region",
+          "value": "HDPH-200",
+          "dimension": "product_sku"
+        }
+      }
+    ]
+  ],
+  "final": {
+    "hypotheses_considered": [
+      {
+        "why": "SwiftShip-EU accounts for about 70% of excess refunds, and its refund rate is high across almost every SKU it ships, not just one product. The EU region shows nearly the same refunds and captures, so it is probably the same population.",
+        "status": "supported",
+        "hypothesis": "The SwiftShip-EU fulfillment partner (or the EU region it serves) is driving the spike"
+      },
+      {
+        "why": "HDPH-200 had a 0% baseline refund rate and accounts for about 63% of excess refunds. It also has refunds in NA and APAC, outside SwiftShip-EU's EU coverage.",
+        "status": "supported",
+        "hypothesis": "Product HDPH-200 has its own problem, separate from the fulfillment partner"
+      },
+      {
+        "why": "Excess refunds are spread across web, mobile and marketplace, with no single channel standing out.",
+        "status": "rejected",
+        "hypothesis": "The spike is driven by sales channel"
+      },
+      {
+        "why": "Electronics holds about 69% of excess refunds, but that is likely because it contains HDPH-200. Home and apparel are also above their baselines.",
+        "status": "open",
+        "hypothesis": "The spike is limited to the electronics category"
+      }
+    ],
+    "hypothesis": "There are two overlapping causes. The main one is the fulfillment partner SwiftShip-EU (matching the EU region), which raises refund rates across many SKUs. The second is product HDPH-200, which went from no refunds in the baseline to a high refund rate in several regions.",
+    "observed_anomaly": "The refund rate in the current window is 21.51% (20 refunds out of 93 captures), compared with a 3.43% baseline, a 6.27x increase.",
+    "explanation": "SwiftShip-EU's refund rate rose to 31.11% from a 4.55% baseline and accounts for 70.35% of excess refunds. Inside SwiftShip-EU, high refund rates appear on many SKUs (for example TEE-ORG at 40% and MUG-CLASSIC at 25%), which points to a fulfillment problem rather than a product one. The EU region shows almost identical numbers (14 refunds, 31.82% rate, 0% baseline), so it most likely reflects SwiftShip-EU's coverage area. Separately, HDPH-200 rose to a 37.93% refund rate from a 0% baseline and has refunds in NA (40%) and APAC (33.33%), which suggests a product-level problem that does not depend on SwiftShip-EU. The worst slice is where the two overlap: HDPH-200 shipped by SwiftShip-EU, with a 50% refund rate. Channel is not a driver.",
+    "uncertainty": "I did not pull refund reason codes or look at individual transactions because the tool budget ran out, so the mechanism is unconfirmed (for example, damage or delays in shipping versus a product defect). Sample sizes are small (12 to 45 captures per slice). I also did not verify by cross-slice that EU and SwiftShip-EU are fully the same population. BlueDart-Intl (20% vs 2.41% baseline) may be a smaller contributor that I did not investigate.",
+    "confidence": "medium",
+    "root_cause": {
+      "dimension": "fulfillment_partner",
+      "value": "SwiftShip-EU"
+    },
+    "secondary_causes": [
+      {
+        "value": "HDPH-200",
+        "dimension": "product_sku"
+      }
+    ],
+    "recommended_action": "MANUAL_REVIEW",
+    "claims": [
+      {
+        "statement": "Overall refund rate in the current window",
+        "query_id": "Q1",
+        "metric_path": "current/rate",
+        "value": "0.2151"
+      },
+      {
+        "statement": "Overall baseline refund rate",
+        "query_id": "Q1",
+        "metric_path": "baseline/rate",
+        "value": "0.0343"
+      },
+      {
+        "statement": "SwiftShip-EU current refund rate",
+        "query_id": "Q2",
+        "metric_path": "by_value/SwiftShip-EU/current_rate",
+        "value": "0.3111"
+      },
+      {
+        "statement": "SwiftShip-EU baseline refund rate",
+        "query_id": "Q2",
+        "metric_path": "by_value/SwiftShip-EU/baseline_rate",
+        "value": "0.0455"
+      },
+      {
+        "statement": "SwiftShip-EU share of excess refunds",
+        "query_id": "Q2",
+        "metric_path": "by_value/SwiftShip-EU/share_of_excess",
+        "value": "0.7035"
+      },
+      {
+        "statement": "HDPH-200 current refund rate",
+        "query_id": "Q3",
+        "metric_path": "by_value/HDPH-200/current_rate",
+        "value": "0.3793"
+      },
+      {
+        "statement": "HDPH-200 baseline refund rate",
+        "query_id": "Q3",
+        "metric_path": "by_value/HDPH-200/baseline_rate",
+        "value": "0.0"
+      },
+      {
+        "statement": "HDPH-200 share of excess refunds",
+        "query_id": "Q3",
+        "metric_path": "by_value/HDPH-200/share_of_excess",
+        "value": "0.6345"
+      },
+      {
+        "statement": "EU region current refund rate",
+        "query_id": "Q4",
+        "metric_path": "by_value/EU/current_rate",
+        "value": "0.3182"
+      },
+      {
+        "statement": "EU region current refunds",
+        "query_id": "Q4",
+        "metric_path": "by_value/EU/current_refunds",
+        "value": "14"
+      },
+      {
+        "statement": "Within SwiftShip-EU, HDPH-200 refund rate",
+        "query_id": "Q7",
+        "metric_path": "by_value/HDPH-200/refund_rate",
+        "value": "0.5"
+      },
+      {
+        "statement": "Within SwiftShip-EU, TEE-ORG refund rate",
+        "query_id": "Q7",
+        "metric_path": "by_value/TEE-ORG/refund_rate",
+        "value": "0.4"
+      },
+      {
+        "statement": "Within SwiftShip-EU, MUG-CLASSIC refund rate",
+        "query_id": "Q7",
+        "metric_path": "by_value/MUG-CLASSIC/refund_rate",
+        "value": "0.25"
+      },
+      {
+        "statement": "HDPH-200 refund rate in the NA region",
+        "query_id": "Q8",
+        "metric_path": "by_value/NA/refund_rate",
+        "value": "0.4"
+      },
+      {
+        "statement": "HDPH-200 refund rate in the APAC region",
+        "query_id": "Q8",
+        "metric_path": "by_value/APAC/refund_rate",
+        "value": "0.3333"
+      },
+      {
+        "statement": "Electronics category share of excess refunds",
+        "query_id": "Q6",
+        "metric_path": "by_value/electronics/share_of_excess",
+        "value": "0.6912"
+      },
+      {
+        "statement": "BlueDart-Intl current refund rate",
+        "query_id": "Q2",
+        "metric_path": "by_value/BlueDart-Intl/current_rate",
+        "value": "0.2"
+      },
+      {
+        "statement": "Web channel share of excess refunds",
+        "query_id": "Q5",
+        "metric_path": "by_value/web/share_of_excess",
+        "value": "0.3883"
+      }
+    ]
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "payops-sentinel-console",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3100",
+    "build": "next build",
+    "start": "next start -p 3100",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "check:token": "node scripts/check-token-leak.mjs",
+    "test:e2e:sandbox": "cd ../backend && .venv/bin/python -m scripts.bootstrap_demo --reset && cd ../frontend && E2E_SANDBOX=1 playwright test e2e/sandbox-refund.spec.ts"
+  },
+  "dependencies": {
+    "ag-grid-community": "36.3.0",
+    "ag-grid-enterprise": "36.3.0",
+    "ag-grid-react": "36.3.0",
+    "ag-studio": "3.1.0",
+    "ag-studio-react": "3.1.0",
+    "next": "15.5.29",
+    "react": "19.1.10",
+    "react-dom": "19.1.10"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "3.3.7",
+    "@playwright/test": "1.65.0",
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "autoprefixer": "10.6.2",
+    "eslint": "9.39.5",
+    "eslint-config-next": "15.5.29",
+    "postcss": "8.5.32",
+    "tailwindcss": "3.4.19",
+    "typescript": "5.9.3"
+  }
+}

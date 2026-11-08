@@ -1,0 +1,12 @@
+SQLAlchemy==2.0.40
+alembic==1.15.2
+anthropic==2.6.0
+fastapi==0.115.12
+google-genai==1.16.1
+httpx==0.28.1
+psycopg-binary==3.2.9
+psycopg==3.2.9
+pydantic-settings==2.9.1
+pydantic==2.11.4
+pytest==8.3.5
+uvicorn==0.34.2
