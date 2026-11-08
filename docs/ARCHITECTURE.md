@@ -16,7 +16,7 @@ flowchart LR
   EV --> F[Finding\nverified / unsupported claims]
   RC[Remediation case\nconcrete complaint] --> DR[AI drafter]
   DR --> PR[ActionProposal]
-  PR --> POL[Policy engine\n15 deterministic checks]
+  PR --> POL[Policy engine\n16 deterministic checks per refund]
   POL --> HUM{Human approval\nbound to sha256 details}
   HUM --> EX[Executor\nsingle-use claim, GET revalidate,\nstable idempotency key, GET verify]
   EX --> CL

@@ -26,7 +26,7 @@ numbers and will happily "issue a refund" if a customer note tells it to. Ops te
 2. **AI recommends, never executes.** The investigator has 9 read-only, argument-validated tools: 8 ledger queries
    (no SQL, no writes) and one PayPal read (`orders.get`, below). A separate drafter may *propose* a typed action for
    one concrete customer case.
-3. **Deterministic money controls.** [15 policy checks](backend/app/policy/engine.py) (case ↔ capture, remaining
+3. **Deterministic money controls.** [16 policy checks on every refund](backend/app/policy/engine.py) (case ↔ capture, remaining
    refundable, case request, $25 cap, real provider capture, currency, one refund per case …; `capture_ownership` is
    a single-merchant placeholder that always passes) → human approval bound to `sha256(type, target, amount,
    currency, case)` → single-use execution claim → fresh PayPal GET re-validation → refund with a stable
@@ -82,7 +82,7 @@ The investigator can cross-check a real ledger row against PayPal's own record t
   every other method before any network call (the toolkit's own `PayPalAPI.run()` would execute *any* method, so it is
   never used). Tests assert all of this, and the investigator package cannot import the write-capable REST client.
 - **Why refunds don't go through the toolkit:** an LLM holding a refund tool can be talked into using it. Here the AI
-  only *drafts* a typed proposal; money moves only after 15 deterministic policy checks, a human approval bound to the
+  only *drafts* a typed proposal; money moves only after 16 deterministic policy checks, a human approval bound to the
   exact action's hash, a fresh PayPal read-back, and webhook/GET verification.
 
 ## Evaluation (measured 2026-11-08, `python -m evals.run_eval --ai 5`)
@@ -125,8 +125,8 @@ In a second terminal:
 cd frontend && npm ci && npm run dev -- --hostname 127.0.0.1 --port 3100
 ```
 Open http://127.0.0.1:3100 → the refund incident → **Run AI investigation** (replayed in judge mode) → click a claim
-to see its evidence → in **Proposals**, fill the manual form for case RC-2041 (PARTIAL_REFUND, 12.00 USD, its capture id
-from the case card) and click **Submit for policy evaluation** → **Approve** → **Execute refund** → watch the real sandbox refund turn **Verified at PayPal**. Try RC-2042 to see the prompt
+to see its evidence → in **Proposals**, fill the manual form (action PARTIAL_REFUND, case RC-2041 — its capture is
+filled from the case — amount 12.00, a short reason) and click **Submit for policy evaluation** → **Approve** → **Execute refund** → watch the real sandbox refund turn **Verified at PayPal**. Try RC-2042 to see the prompt
 injection blocked.
 
 Notes: `LOCAL_CONSOLE=1` is for a console on 127.0.0.1 only; anywhere else set per-operator logins in
