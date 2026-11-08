@@ -33,7 +33,15 @@ export function IncidentHeader({ incident, proposals }: { incident: Incident; pr
 
       <div className="mt-4 grid gap-3 md:grid-cols-[2fr,1fr]">
         <table className="w-full text-sm">
-          <caption className="panel-title mb-2 text-left">Deterministic detector numbers</caption>
+          <caption className="panel-title mb-2 text-left">
+            Deterministic detector numbers
+            {incident.created_at && (
+              <span className="ml-2 font-mono text-xs font-normal normal-case text-fg-faint">
+                snapshot at detection {incident.created_at} · investigation queries read the live ledger, so refunds
+                recorded later in the same window show up there
+              </span>
+            )}
+          </caption>
           <thead className="text-left text-xs text-fg-faint">
             <tr>
               <th scope="col" className="py-1 font-medium">Window</th>

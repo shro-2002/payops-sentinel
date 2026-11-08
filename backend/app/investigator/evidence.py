@@ -5,6 +5,16 @@ A claim is VERIFIED only when:
   2. metric_path resolves inside that call's stored result, and
   3. the claimed number equals the source number (rates may be stated as fraction or percent).
 Anything else is UNSUPPORTED and excluded from the verified conclusion.
+
+A VERIFIED number says only "this value is in that result". Whether a slice is a CAUSE is a separate, structured
+`CauseClaim` ({dimension, value, is_cause, explained_share, query_id}) checked against one deterministic, stated rule:
+a cause must explain at least CAUSE_SHARE_THRESHOLD of the excess refunds in the cited top_contributors result.
+That is a necessary condition, not proof of causality (marginal shares cannot separate a cause from a confounded
+slice), so the check is asymmetric:
+  is_cause=true,  share >= threshold -> CAUSE_VERIFIED      share < threshold  -> CONTRADICTED
+  is_cause=false, share <  threshold -> NOT_CAUSE_VERIFIED  share >= threshold -> UNRESOLVED (the rule cannot confirm
+                                                                                 a confounding argument)
+A root cause counts only when its cause claim is CAUSE_VERIFIED; prose and statements never decide it.
 """
 
 from __future__ import annotations
@@ -22,6 +32,8 @@ from app.db.models import AgentToolCall, EvidenceRecord, Finding, Incident, Inve
 from app.investigator.tools import TOOLS, ToolArgumentError
 
 RATE_TOLERANCE = Decimal("0.0006")
+CAUSE_SHARE_THRESHOLD = Decimal("0.25")  # a cause explains at least a quarter of the excess refunds
+DimensionName = Literal["fulfillment_partner", "product_sku", "product_category", "region", "channel"]
 NUM_TOLERANCE = Decimal("0.006")
 
 
@@ -42,6 +54,19 @@ class CauseRef(BaseModel):
     value: str
 
 
+class CauseClaim(BaseModel):
+    dimension: DimensionName
+    value: str = Field(max_length=64)
+    is_cause: bool
+    explained_share: str = Field(max_length=16, description="share_of_excess of this slice, fraction or percent")
+    query_id: str = Field(max_length=16, description="a top_contributors call over this dimension")
+
+    @field_validator("explained_share", mode="before")
+    @classmethod
+    def _share_as_text(cls, v):
+        return str(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
+
+
 class HypothesisNote(BaseModel):
     hypothesis: str
     status: Literal["supported", "rejected", "open"]
@@ -58,6 +83,7 @@ class FindingDraft(BaseModel):
     root_cause: CauseRef | None = None
     secondary_causes: list[CauseRef] = Field(default_factory=list)
     claims: list[Claim] = Field(default_factory=list, max_length=20)
+    cause_claims: list[CauseClaim] = Field(default_factory=list, max_length=10)
     recommended_action: Literal["NO_ACTION", "MANUAL_REVIEW", "PARTIAL_REFUND"]
 
 
@@ -144,6 +170,33 @@ def check_claim(claim: Claim, calls_by_qid: dict[str, AgentToolCall]) -> tuple[s
     return "UNSUPPORTED", str(source), f"claimed {claim.value} but source has {source}"
 
 
+def check_cause_claim(cc: CauseClaim, calls_by_qid: dict[str, AgentToolCall]) -> tuple[str, str | None, str]:
+    """Verdict for one cause claim against the share rule (see module docstring); UNSUPPORTED when the cited share
+    can't be read or doesn't match."""
+    call = calls_by_qid.get(cc.query_id)
+    if call is None or call.status != "OK" or call.result is None:
+        return "UNSUPPORTED", None, f"{cc.query_id} is not a successful call of this investigation"
+    if call.tool_name != "top_contributors" or (call.arguments or {}).get("dimension") != cc.dimension:
+        return "UNSUPPORTED", None, f"{cc.query_id} is not top_contributors over {cc.dimension}"
+    row = (call.result.get("by_value") or {}).get(cc.value)
+    if row is None:
+        return "UNSUPPORTED", None, f"{cc.value} is not in the {cc.query_id} ranking"
+    share = Decimal(str(row["share_of_excess"]))
+    try:
+        claimed, is_pct = _num(cc.explained_share)
+    except InvalidOperation:
+        return "UNSUPPORTED", str(share), "explained_share is not a number"
+    if abs((claimed / 100 if is_pct else claimed) - share) > RATE_TOLERANCE:
+        return "UNSUPPORTED", str(share), f"claimed share {cc.explained_share} but source has {share}"
+    material = share >= CAUSE_SHARE_THRESHOLD
+    rule = f"share_of_excess {share} {'>=' if material else '<'} {CAUSE_SHARE_THRESHOLD}"
+    if cc.is_cause:
+        return ("CAUSE_VERIFIED" if material else "CONTRADICTED"), str(share), rule
+    if material:
+        return "UNRESOLVED", str(share), f"{rule}: ruling out a material slice needs evidence the share rule can't check"
+    return "NOT_CAUSE_VERIFIED", str(share), rule
+
+
 def persist_finding(s: Session, run: InvestigationRun, inc: Incident, draft: FindingDraft) -> Finding:
     calls = s.scalars(select(AgentToolCall).where(AgentToolCall.investigation_id == run.id)).all()
     by_qid = {c.query_id: c for c in calls}
@@ -163,18 +216,32 @@ def persist_finding(s: Session, run: InvestigationRun, inc: Incident, draft: Fin
                              source_value=src, verification=verdict, reason=reason))
         verified += verdict == "VERIFIED"
         unsupported += verdict != "VERIFIED"
+    cause_verdicts = []
+    for cc in draft.cause_claims:
+        verdict, src, reason = check_cause_claim(cc, by_qid)
+        cause_verdicts.append((cc, verdict))
+        call = by_qid.get(cc.query_id)
+        label = "is a cause" if cc.is_cause else "is not a cause"
+        s.add(EvidenceRecord(finding_id=f.id, tool_call_id=call.id if call else None, query_id=cc.query_id,
+                             statement=f"Model: {cc.dimension}={cc.value} {label} (rule: a cause explains >= "
+                             f"{CAUSE_SHARE_THRESHOLD} of excess refunds)", metric_path=f"by_value/{cc.value}/share_of_excess",
+                             claimed_value=cc.explained_share, source_value=src, verification=verdict, reason=reason))
+        verified += verdict.endswith("_VERIFIED")
+        unsupported += verdict in ("UNSUPPORTED", "CONTRADICTED")  # UNRESOLVED is neither: reported on its own
     f.verified_claim_count, f.unsupported_claim_count = verified, unsupported
     verified_values = [Decimal(src) for c in draft.claims for v, src, _ in [check_claim(c, by_qid)]
                        if v == "VERIFIED" and src is not None and _is_num(src)]
     prose = " ".join([draft.explanation, draft.hypothesis, draft.observed_anomaly])
-    # A root cause only counts as identified when it is backed by at least one verified claim.
-    if rc and _root_cause_backed(rc, draft.claims, by_qid):
+    # A root cause only counts as identified when a structured cause claim on that slice passes the threshold rule.
+    if rc and _root_cause_backed(rc, cause_verdicts):
         inc.root_cause_identified = True
         inc.status = "ROOT_CAUSE_IDENTIFIED" if inc.status == "OPEN" else inc.status
     run.trace = list(run.trace or []) + [{"step": "prose_unverified_numbers",
                                           "value": unbacked_numbers(prose, verified_values)},
                                          {"step": "secondary_causes",
                                           "value": [c.model_dump() for c in draft.secondary_causes]},
+                                         {"step": "cause_checks",
+                                          "value": [{**cc.model_dump(), "verdict": v} for cc, v in cause_verdicts]},
                                          {"step": "hypotheses", "value": [h.model_dump() for h in draft.hypotheses_considered]}]
     return f
 
@@ -206,19 +273,7 @@ def unbacked_numbers(prose: str, verified: list[Decimal]) -> list[str]:
     return sorted(set(out))
 
 
-def _root_cause_backed(rc: CauseRef, claims: list[Claim], by_qid: dict[str, AgentToolCall]) -> bool:
-    """A root cause counts as identified only if a VERIFIED claim cites that exact dimension value."""
-    from app.investigator.tools import DIMENSIONS
-    if rc.dimension not in DIMENSIONS:
-        return False
-    for c in claims:
-        call = by_qid.get(c.query_id)
-        if call is None or check_claim(c, by_qid)[0] != "VERIFIED":
-            continue
-        args = call.arguments or {}
-        in_path = f"by_value/{rc.value}/" in c.metric_path + "/"
-        dim_ok = args.get("dimension") == rc.dimension or args.get("by") == rc.dimension
-        scoped = args.get("dimension") == rc.dimension and args.get("value") == rc.value
-        if (in_path and dim_ok) or scoped:
-            return True
-    return False
+def _root_cause_backed(rc: CauseRef, cause_verdicts: list[tuple[CauseClaim, str]]) -> bool:
+    """Identified only if a cause claim on exactly this slice says is_cause and passes the threshold rule."""
+    return any(cc.dimension == rc.dimension and cc.value == rc.value and v == "CAUSE_VERIFIED"
+               for cc, v in cause_verdicts)

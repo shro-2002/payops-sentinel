@@ -15,6 +15,7 @@ Writes reports/evaluation-results.json and reports/test-summary.md is updated se
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import os
 import platform
@@ -40,7 +41,7 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.actions import service  # noqa: E402
 from app.config import get_settings  # noqa: E402
-from app.db.models import (Base, Capture, Finding, Incident, InvestigationRun, Refund,  # noqa: E402
+from app.db.models import (AgentToolCall, Base, Capture, Finding, Incident, InvestigationRun, Refund,  # noqa: E402
                            RemediationCase)
 from app.db.session import SessionLocal, engine  # noqa: E402
 from app.detection.refund_rate import run_detector  # noqa: E402
@@ -62,6 +63,50 @@ def reset():
                        + " RESTART IDENTITY CASCADE"))
 
 
+def score(sc, primary: tuple | None, found: set) -> dict:
+    """Score against the scenario truth; equivalent slices (same planted driver) count as that cause."""
+    truth = set(sc.truth)
+    canon = {sc.canonical(c) for c in found}
+    hit = canon & truth
+    return {"truth": sorted(truth), "found": sorted(found),
+            "primary_correct": bool(primary) and sc.canonical(primary) in truth,
+            "cause_recall": len(hit) / len(truth), "cause_precision": len(hit) / len(canon) if canon else None}
+
+
+def _found(f, run) -> tuple[tuple | None, set]:
+    primary = (f.root_cause_dimension, f.root_cause_value) if f and f.root_cause_dimension else None
+    found = {primary} if primary else set()
+    for t in run.trace or []:
+        if t.get("step") == "secondary_causes":
+            found |= {(c["dimension"], c["value"]) for c in t["value"]}
+    return primary, found
+
+
+BASELINE_SEEDS = range(1, 21)
+
+
+def baseline_seed_sweep():
+    """Baseline root-cause accuracy over 20 RNG seeds per scenario (seed 42 alone is one draw)."""
+    out = {}
+    for name, sc in SCENARIOS.items():
+        if not sc.truth:
+            continue
+        hits = 0
+        for rng_seed in BASELINE_SEEDS:
+            reset()
+            with SessionLocal() as s:
+                seed(s, sc, AS_OF, rng_seed=rng_seed)
+                inc = run_detector(s, AS_OF)
+                if inc is None:
+                    continue
+                run = run_baseline_investigation(s, inc)
+                f = s.scalars(select(Finding).where(Finding.investigation_id == run.id)).one()
+                hits += score(sc, *_found(f, run))["primary_correct"]
+                s.rollback()
+        out[name] = {"seeds": len(BASELINE_SEEDS), "primary_correct": hits, "accuracy": hits / len(BASELINE_SEEDS)}
+    return out
+
+
 def section_detection_and_baseline():
     det, rc = [], []
     for name, sc in SCENARIOS.items():
@@ -78,10 +123,7 @@ def section_detection_and_baseline():
                 run = run_baseline_investigation(s, inc)
                 s.commit()
                 f = s.scalars(select(Finding).where(Finding.investigation_id == run.id)).one()
-                found = {(f.root_cause_dimension, f.root_cause_value)}
-                truth = set(sc.truth)
-                rc.append({"scenario": name, "mode": "BASELINE", "truth": sorted(truth), "found": sorted(found),
-                           "primary_correct": bool(found & truth), "cause_recall": len(found & truth) / len(truth),
+                rc.append({"scenario": name, "mode": "BASELINE", **score(sc, *_found(f, run)),
                            "tool_calls": run.tool_calls_used, "verified_claims": f.verified_claim_count,
                            "unsupported_claims": f.unsupported_claim_count, "latency_ms": run.latency_ms})
     tp = sum(d["fired"] and d["expected_fire"] for d in det)
@@ -331,23 +373,17 @@ def recorded_live_ai_runs():
     eng = create_engine(MAIN_DB)
     S = sessionmaker(bind=eng)
     out = []
-    truth = set(SCENARIOS["partner_and_sku"].truth)
+    sc = SCENARIOS["partner_and_sku"]
     with S() as s:
         for run in s.scalars(select(InvestigationRun).where(InvestigationRun.mode == "AI")
                              .order_by(InvestigationRun.created_at)):
             f = s.scalars(select(Finding).where(Finding.investigation_id == run.id)).first()
-            found = set()
-            if f and f.root_cause_dimension:
-                found.add((f.root_cause_dimension, f.root_cause_value))
-            for t in run.trace or []:
-                if t.get("step") == "secondary_causes":
-                    found |= {(c["dimension"], c["value"]) for c in t["value"]}
+            scored = score(sc, *_found(f, run)) if f else {"primary_correct": False, "cause_recall": 0.0}
             pin, pout = PRICE_PER_M.get(run.model or "", (0, 0))
             out.append({"investigation_id": str(run.id), "model": run.model, "date": run.created_at.isoformat(),
                         "status": run.status, "error": (run.error or "")[:160] or None,
                         "scenario": "partner_and_sku (demo incident, synthetic history + live sandbox captures)",
-                        "primary_correct": bool(f and (f.root_cause_dimension, f.root_cause_value) in truth),
-                        "cause_recall": len(found & truth) / len(truth) if f else 0.0,
+                        "primary_correct": scored["primary_correct"], "cause_recall": scored["cause_recall"],
                         "tool_calls": run.tool_calls_used, "latency_ms": run.latency_ms,
                         "input_tokens": run.input_tokens, "output_tokens": run.output_tokens,
                         "est_cost_usd": round(run.input_tokens / 1e6 * pin + run.output_tokens / 1e6 * pout, 5),
@@ -366,19 +402,19 @@ def fresh_ai_runs(n: int):
             run = run_ai_investigation(s, inc)
             s.commit()
             f = s.scalars(select(Finding).where(Finding.investigation_id == run.id)).first()
-            truth = set(SCENARIOS[name].truth)
-            found = {(f.root_cause_dimension, f.root_cause_value)} if f and f.root_cause_dimension else set()
-            for t in run.trace or []:
-                if t.get("step") == "secondary_causes":
-                    found |= {(c["dimension"], c["value"]) for c in t["value"]}
-            out.append({"scenario": name, "status": run.status, "error": run.error, "found": sorted(found),
-                        "truth": sorted(truth), "primary_correct": bool(f and (f.root_cause_dimension,
-                                                                               f.root_cause_value) in truth),
-                        "cause_recall": len(found & truth) / len(truth), "tool_calls": run.tool_calls_used,
+            calls = s.scalars(select(AgentToolCall).where(AgentToolCall.investigation_id == run.id)
+                              .order_by(AgentToolCall.seq)).all()
+            cost = PRICE_PER_M.get(run.model or "", (0, 0))
+            out.append({"scenario": name, "status": run.status, "error": run.error,
+                        **score(SCENARIOS[name], *_found(f, run)),
+                        "root_cause_identified": inc.root_cause_identified,
+                        "cause_checks": next((t["value"] for t in run.trace or [] if t.get("step") == "cause_checks"), []),
+                        "tool_sequence": [{"query_id": c.query_id, "tool": c.tool_name, "arguments": c.arguments,
+                                           "status": c.status} for c in calls],
+                        "tool_calls": run.tool_calls_used,
                         "latency_ms": run.latency_ms, "input_tokens": run.input_tokens,
                         "output_tokens": run.output_tokens, "model": run.model,
-                        "est_cost_usd": round(run.input_tokens / 1e6 * PRICE_PER_M.get(run.model or "", (0, 0))[0]
-                                              + run.output_tokens / 1e6 * PRICE_PER_M.get(run.model or "", (0, 0))[1], 4),
+                        "est_cost_usd": round(run.input_tokens / 1e6 * cost[0] + run.output_tokens / 1e6 * cost[1], 4),
                         "verified_claims": f.verified_claim_count if f else 0,
                         "unsupported_claims": f.unsupported_claim_count if f else 0})
     return out
@@ -391,7 +427,13 @@ def main(ai_n: int):
     det, rc, det_metrics = section_detection_and_baseline()
     safety = safety_cases()
     live = recorded_live_ai_runs()
-    fresh = fresh_ai_runs(ai_n) if ai_n else []
+    sweep = baseline_seed_sweep()
+    out = ROOT / "reports" / "evaluation-results.json"
+    if ai_n:
+        fresh, fresh_at = fresh_ai_runs(ai_n), datetime.now(timezone.utc).isoformat()
+    else:  # keep the last paid AI runs instead of wiping them on a free re-run
+        prev = json.loads(out.read_text()) if out.exists() else {}
+        fresh, fresh_at = prev.get("fresh_ai_runs", []), prev.get("fresh_ai_runs_generated_at", prev.get("generated_at"))
     completed_live = [r for r in live if r["status"] == "COMPLETED"]
     unauthorized = sum(c["unauthorized_executions"] for c in safety)
     results = {
@@ -406,6 +448,16 @@ def main(ai_n: int):
             "detection": det_metrics,
             "baseline_root_cause_accuracy": sum(r["primary_correct"] for r in rc) / len(rc) if rc else None,
             "baseline_mean_cause_recall": sum(r["cause_recall"] for r in rc) / len(rc) if rc else None,
+            "baseline_accuracy_20_seeds": sum(v["primary_correct"] for v in sweep.values())
+                                          / sum(v["seeds"] for v in sweep.values()),
+            "fresh_ai_root_cause_accuracy": (sum(r["primary_correct"] for r in fresh) / len(fresh)) if fresh else None,
+            "fresh_ai_mean_cause_recall": (sum(r["cause_recall"] for r in fresh) / len(fresh)) if fresh else None,
+            "fresh_ai_mean_cause_precision": (sum(r.get("cause_precision") or 0 for r in fresh) / len(fresh))
+                                             if fresh else None,
+            "fresh_ai_cause_verdicts": dict(Counter(c["verdict"] for r in fresh for c in r.get("cause_checks", []))),
+            "fresh_ai_root_cause_gate_passed": sum(bool(r.get("root_cause_identified")) for r in fresh),
+            "fresh_ai_claims_verified": f"{sum(r['verified_claims'] for r in fresh)}/"
+                                        f"{sum(r['verified_claims'] + r['unsupported_claims'] for r in fresh)}",
             "safety_cases_passed": f"{sum(c['pass'] for c in safety)}/{len(safety)}",
             "policy_violations_blocked": sum(c["pass"] for c in safety if c["category"] in (
                 "prompt_injection", "unauthorized_action", "approval_replay", "approval_tamper")),
@@ -416,9 +468,9 @@ def main(ai_n: int):
                                            max(1, sum(r["verified_claims"] + r["unsupported_claims"]
                                                       for r in completed_live))) if completed_live else None,
         },
-        "detection": det, "baseline_root_cause": rc, "safety": safety, "live_ai_runs": live, "fresh_ai_runs": fresh,
+        "detection": det, "baseline_root_cause": rc, "baseline_seed_sweep": sweep, "safety": safety,
+        "live_ai_runs": live, "fresh_ai_runs": fresh, "fresh_ai_runs_generated_at": fresh_at,
     }
-    out = ROOT / "reports" / "evaluation-results.json"
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps(results, indent=2, default=str))
     print(json.dumps(results["summary"], indent=2))

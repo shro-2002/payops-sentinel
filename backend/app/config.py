@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     local_console: bool = False  # dev-only single-operator console (same LOCAL_CONSOLE flag the proxy reads)
     replay_llm: bool = False  # judge mode: replay a recorded Claude transcript (labelled REPLAY), no LLM key needed
     operator_token: str = ""  # bearer token required for every write endpoint
+    operator_identity_public_key: str = ""  # base64 DER Ed25519 public key; proxy signs X-Operator with the private key
     max_tool_calls: int = 8
     refund_cap_minor: int = 2500  # policy cap per action: $25.00
     approval_ttl_minutes: int = 15

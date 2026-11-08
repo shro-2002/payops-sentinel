@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-11-08T06:07:00+00:00",
+  "generated_at": "2026-11-08T07:18:00+00:00",
   "paypal_env": "sandbox",
   "live_captures": {
     "legit": {
-      "order_id": "1HH82380TH1138804",
-      "capture_id": "7B335909WT979644L",
+      "order_id": "5U026557VD2744148",
+      "capture_id": "26N72420GP068431A",
       "status": "COMPLETED",
       "amount": {
         "currency_code": "USD",
@@ -12,8 +12,8 @@
       }
     },
     "attacker": {
-      "order_id": "37V12338C5464931N",
-      "capture_id": "3GT37361F9637651P",
+      "order_id": "2HN13266332060134",
+      "capture_id": "71M69098VU960990A",
       "status": "COMPLETED",
       "amount": {
         "currency_code": "USD",
@@ -21,8 +21,8 @@
       }
     },
     "normal": {
-      "order_id": "6511215258367483J",
-      "capture_id": "20D53924MP3858206",
+      "order_id": "6HB91552DA304373C",
+      "capture_id": "49950685EU802893Y",
       "status": "COMPLETED",
       "amount": {
         "currency_code": "USD",
@@ -33,7 +33,7 @@
   "notes": [
     "Synthetic history rows have origin=SYNTHETIC and ids starting with SYN."
   ],
-  "incident_id": "caf026b1-dc41-44a6-856c-945760910353",
+  "incident_id": "4bfc2455-6e4b-4397-add2-6afc0e287059",
   "incident_title": "Refund rate 21.5% vs 3.4% baseline (20 refunds / 93 captures)",
   "remediation_cases": [
     "RC-2041 (legitimate partial refund)",

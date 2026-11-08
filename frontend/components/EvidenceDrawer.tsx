@@ -6,6 +6,7 @@ import { AgGridReact } from "ag-grid-react";
 import type { ColDef } from "ag-grid-community";
 
 import { useApi } from "@/lib/api";
+import { evidenceBadge } from "@/lib/evidence-label";
 import type { Capture, Evidence, EvidenceRecords } from "@/lib/types";
 
 import { gridTheme } from "./grid-setup";
@@ -61,7 +62,7 @@ export function EvidenceDrawer({ evidence, onClose }: { evidence: Evidence | nul
                 {evidence.statement}
               </h2>
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                <span className={evidence.verification === "VERIFIED" ? "badge badge-ok" : "badge badge-bad"}>{evidence.verification}</span>
+                <span className={evidenceBadge(evidence).className}>{evidenceBadge(evidence).text}</span>
                 <span className="font-mono text-fg-muted">path {evidence.metric_path}</span>
                 <span className="font-mono text-fg-muted">claimed {evidence.claimed_value}</span>
                 <span className="font-mono text-fg-muted">stored {evidence.source_value ?? "—"}</span>

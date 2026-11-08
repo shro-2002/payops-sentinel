@@ -1,0 +1,286 @@
+{
+  "investigation_id": "4029469a-17c4-4867-ba72-f0f912121c8b",
+  "model": "claude-opus-5-5",
+  "mode": "AI",
+  "status": "COMPLETED",
+  "created_at": "2026-11-08T11:15:11.138896+00:00",
+  "incident": {
+    "id": "4bfc2455-6e4b-4397-add2-6afc0e287059",
+    "title": "Refund rate 21.5% vs 3.4% baseline (20 refunds / 93 captures)",
+    "metrics_at_detection": {
+      "rate": 0.2151,
+      "refunds": 20,
+      "captures": 93,
+      "refunded_minor": 128577
+    },
+    "baseline": {
+      "rate": 0.0343,
+      "refunds": 12,
+      "captures": 350,
+      "refunded_minor": 81549
+    }
+  },
+  "tool_calls": [
+    {
+      "query_id": "Q1",
+      "tool": "get_incident_context",
+      "arguments": {},
+      "status": "OK"
+    },
+    {
+      "query_id": "Q2",
+      "tool": "top_contributors",
+      "arguments": {
+        "limit": 5,
+        "dimension": "fulfillment_partner"
+      },
+      "status": "OK"
+    },
+    {
+      "query_id": "Q3",
+      "tool": "top_contributors",
+      "arguments": {
+        "limit": 5,
+        "dimension": "product_sku"
+      },
+      "status": "OK"
+    },
+    {
+      "query_id": "Q4",
+      "tool": "top_contributors",
+      "arguments": {
+        "limit": 5,
+        "dimension": "region"
+      },
+      "status": "OK"
+    },
+    {
+      "query_id": "Q5",
+      "tool": "top_contributors",
+      "arguments": {
+        "limit": 5,
+        "dimension": "channel"
+      },
+      "status": "OK"
+    },
+    {
+      "query_id": "Q6",
+      "tool": "top_contributors",
+      "arguments": {
+        "limit": 5,
+        "dimension": "product_category"
+      },
+      "status": "OK"
+    },
+    {
+      "query_id": "Q7",
+      "tool": "cross_slice",
+      "arguments": {
+        "by": "product_sku",
+        "value": "SwiftShip-EU",
+        "dimension": "fulfillment_partner"
+      },
+      "status": "OK"
+    },
+    {
+      "query_id": "Q8",
+      "tool": "refund_reasons",
+      "arguments": {
+        "value": "HDPH-200",
+        "dimension": "product_sku"
+      },
+      "status": "OK"
+    }
+  ],
+  "latency_ms": 30802,
+  "input_tokens": 15822,
+  "output_tokens": 3486,
+  "est_cost_usd": 0.133,
+  "finding": {
+    "root_cause": [
+      "fulfillment_partner",
+      "SwiftShip-EU"
+    ],
+    "confidence": "medium",
+    "recommended_action": "MANUAL_REVIEW",
+    "hypothesis": "There appear to be two separate causes: a fulfillment problem at SwiftShip-EU, and a product-quality problem with SKU HDPH-200.",
+    "uncertainty": "I didn't check how HDPH-200 refunds are spread across partners other than SwiftShip-EU, or the refund reasons for SwiftShip-EU's other SKUs. I also couldn't rule out EU region or electronics as independent causes, because their shares are above 0.25. Every channel's share is also above 0.25. Refund counts per dimension add up to 21 while the incident reports 20, so one capture may have more than one refund. The samples are small. I looked at no individual transactions or PayPal records.",
+    "verified_claim_count": 16,
+    "unsupported_claim_count": 0
+  },
+  "secondary_causes": [
+    {
+      "value": "HDPH-200",
+      "dimension": "product_sku"
+    }
+  ],
+  "prose_unverified_numbers": [
+    "20",
+    "93"
+  ],
+  "evidence": [
+    {
+      "query_id": "Q1",
+      "statement": "Overall refund rate in the current window",
+      "metric_path": "current/rate",
+      "claimed": "0.2151",
+      "source": "0.2151",
+      "verdict": "VERIFIED",
+      "reason": null
+    },
+    {
+      "query_id": "Q1",
+      "statement": "Overall refund rate in the baseline window",
+      "metric_path": "baseline/rate",
+      "claimed": "0.0343",
+      "source": "0.0343",
+      "verdict": "VERIFIED",
+      "reason": null
+    },
+    {
+      "query_id": "Q2",
+      "statement": "SwiftShip-EU current refund rate",
+      "metric_path": "by_value/SwiftShip-EU/current_rate",
+      "claimed": "0.3111",
+      "source": "0.3111",
+      "verdict": "VERIFIED",
+      "reason": null
+    },
+    {
+      "query_id": "Q2",
+      "statement": "SwiftShip-EU baseline refund rate",
+      "metric_path": "by_value/SwiftShip-EU/baseline_rate",
+      "claimed": "0.0455",
+      "source": "0.0455",
+      "verdict": "VERIFIED",
+      "reason": null
+    },
+    {
+      "query_id": "Q2",
+      "statement": "SwiftShip-EU share of excess refunds",
+      "metric_path": "by_value/SwiftShip-EU/share_of_excess",
+      "claimed": "0.6816",
+      "source": "0.6816",
+      "verdict": "VERIFIED",
+      "reason": null
+    },
+    {
+      "query_id": "Q3",
+      "statement": "HDPH-200 current refund rate",
+      "metric_path": "by_value/HDPH-200/current_rate",
+      "claimed": "0.4138",
+      "source": "0.4138",
+      "verdict": "VERIFIED",
+      "reason": null
+    },
+    {
+      "query_id": "Q3",
+      "statement": "HDPH-200 baseline refund rate",
+      "metric_path": "by_value/HDPH-200/baseline_rate",
+      "claimed": "0.0",
+      "source": "0.0",
+      "verdict": "VERIFIED",
+      "reason": null
+    },
+    {
+      "query_id": "Q3",
+      "statement": "HDPH-200 share of excess refunds",
+      "metric_path": "by_value/HDPH-200/share_of_excess",
+      "claimed": "0.6544",
+      "source": "0.6544",
+      "verdict": "VERIFIED",
+      "reason": null
+    },
+    {
+      "query_id": "Q7",
+      "statement": "HDPH-200 refunds through SwiftShip-EU",
+      "metric_path": "by_value/HDPH-200/refunds",
+      "claimed": "6",
+      "source": "6",
+      "verdict": "VERIFIED",
+      "reason": null
+    },
+    {
+      "query_id": "Q7",
+      "statement": "MUG-CLASSIC refund rate through SwiftShip-EU, also elevated",
+      "metric_path": "by_value/MUG-CLASSIC/refund_rate",
+      "claimed": "0.25",
+      "source": "0.25",
+      "verdict": "VERIFIED",
+      "reason": null
+    },
+    {
+      "query_id": "Q8",
+      "statement": "HDPH-200 refunds with reason DEFECTIVE",
+      "metric_path": "by_reason/DEFECTIVE",
+      "claimed": "6",
+      "source": "6",
+      "verdict": "VERIFIED",
+      "reason": null
+    },
+    {
+      "query_id": "Q8",
+      "statement": "HDPH-200 refunds with reason ITEM_NOT_RECEIVED",
+      "metric_path": "by_reason/ITEM_NOT_RECEIVED",
+      "claimed": "5",
+      "source": "5",
+      "verdict": "VERIFIED",
+      "reason": null
+    },
+    {
+      "query_id": "Q4",
+      "statement": "EU region share of excess refunds",
+      "metric_path": "by_value/EU/share_of_excess",
+      "claimed": "0.7976",
+      "source": "0.7976",
+      "verdict": "VERIFIED",
+      "reason": null
+    },
+    {
+      "query_id": "Q6",
+      "statement": "Electronics share of excess refunds",
+      "metric_path": "by_value/electronics/share_of_excess",
+      "claimed": "0.7085",
+      "source": "0.7085",
+      "verdict": "VERIFIED",
+      "reason": null
+    },
+    {
+      "query_id": "Q2",
+      "statement": "Model: fulfillment_partner=SwiftShip-EU is a cause (rule: a cause explains >= 0.25 of excess refunds)",
+      "metric_path": "by_value/SwiftShip-EU/share_of_excess",
+      "claimed": "0.6816",
+      "source": "0.6816",
+      "verdict": "CAUSE_VERIFIED",
+      "reason": "share_of_excess 0.6816 >= 0.25"
+    },
+    {
+      "query_id": "Q3",
+      "statement": "Model: product_sku=HDPH-200 is a cause (rule: a cause explains >= 0.25 of excess refunds)",
+      "metric_path": "by_value/HDPH-200/share_of_excess",
+      "claimed": "0.6544",
+      "source": "0.6544",
+      "verdict": "CAUSE_VERIFIED",
+      "reason": "share_of_excess 0.6544 >= 0.25"
+    },
+    {
+      "query_id": "Q4",
+      "statement": "Model: region=EU is not a cause (rule: a cause explains >= 0.25 of excess refunds)",
+      "metric_path": "by_value/EU/share_of_excess",
+      "claimed": "0.7976",
+      "source": "0.7976",
+      "verdict": "UNRESOLVED",
+      "reason": "share_of_excess 0.7976 >= 0.25: ruling out a material slice needs evidence the share rule can't check"
+    },
+    {
+      "query_id": "Q6",
+      "statement": "Model: product_category=electronics is not a cause (rule: a cause explains >= 0.25 of excess refunds)",
+      "metric_path": "by_value/electronics/share_of_excess",
+      "claimed": "0.7085",
+      "source": "0.7085",
+      "verdict": "UNRESOLVED",
+      "reason": "share_of_excess 0.7085 >= 0.25: ruling out a material slice needs evidence the share rule can't check"
+    }
+  ],
+  "root_cause_identified": true
+}

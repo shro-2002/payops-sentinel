@@ -40,6 +40,11 @@ export function operatorToken(): string | undefined {
   return process.env.OPERATOR_TOKEN || rootEnv().OPERATOR_TOKEN || undefined;
 }
 
+/** base64 PKCS#8 DER Ed25519 key that signs X-Operator; the backend holds only the public half. */
+export function operatorIdentityPrivateKey(): string | undefined {
+  return process.env.OPERATOR_IDENTITY_PRIVATE_KEY || rootEnv().OPERATOR_IDENTITY_PRIVATE_KEY || undefined;
+}
+
 export function backendUrl(): string {
   return (process.env.BACKEND_URL || DEFAULT_BACKEND_URL).replace(/\/+$/, "");
 }

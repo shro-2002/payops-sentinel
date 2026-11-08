@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, createPrivateKey, randomBytes, scryptSync, sign, timingSafeEqual } from "node:crypto";
 
-import { allowedConsoleHosts, backendUrl, consoleOperators, localConsoleAllowed, operatorToken } from "@/lib/server-env";
+import {
+  allowedConsoleHosts,
+  backendUrl,
+  consoleOperators,
+  localConsoleAllowed,
+  operatorIdentityPrivateKey,
+  operatorToken,
+} from "@/lib/server-env";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +46,22 @@ function fail(status: number, code: string, message: string) {
   return NextResponse.json({ detail: { code, message } }, { status });
 }
 
+// Four-eyes identity: the backend accepts a named operator only with this signature (backend/app/api/identity.py).
+// Without a key the backend ignores the name and every caller is "console", so approvals fail closed.
+function identityHeaders(operator: string, method: string, url: string, body = ""): Record<string, string> {
+  const keyB64 = operatorIdentityPrivateKey();
+  if (!keyB64) return { "x-operator": operator };
+  const { pathname, search } = new URL(url);
+  const ts = Math.floor(Date.now() / 1000).toString();
+  const nonce = randomBytes(16).toString("base64url");
+  const digest = createHash("sha256").update(body, "utf8").digest("hex");
+  // Must match backend/app/api/identity.py signed_message: body and query are bound, nonce is single-use.
+  const message = `v1\n${operator}\n${method}\n${pathname}\n${search.replace(/^\?/, "")}\n${digest}\n${ts}\n${nonce}`;
+  const key = createPrivateKey({ key: Buffer.from(keyB64, "base64"), format: "der", type: "pkcs8" });
+  const sig = sign(null, Buffer.from(message), key).toString("base64");
+  return { "x-operator": operator, "x-operator-ts": ts, "x-operator-nonce": nonce, "x-operator-sig": sig };
+}
+
 function upstreamUrl(req: NextRequest, joined: string): string {
   const qs = new URLSearchParams();
   req.nextUrl.searchParams.forEach((v, k) => {
@@ -71,9 +94,10 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   if (!operator) return unauthenticated();
   const token = operatorToken();
   if (!token) return fail(503, "OPERATOR_TOKEN_MISSING", "OPERATOR_TOKEN is not configured on the console server");
-  return forward(upstreamUrl(req, joined), {
+  const url = upstreamUrl(req, joined);
+  return forward(url, {
     method: "GET",
-    headers: { authorization: `Bearer ${token}`, "x-operator": operator },
+    headers: { authorization: `Bearer ${token}`, ...identityHeaders(operator, "GET", url) },
   });
 }
 
@@ -98,10 +122,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const token = operatorToken();
   if (!token) return fail(503, "OPERATOR_TOKEN_MISSING", "OPERATOR_TOKEN is not configured on the console server");
 
-  return forward(upstreamUrl(req, joined), {
+  const url = upstreamUrl(req, joined);
+  const forwarded = body || "{}";
+  return forward(url, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "x-operator": operator },
-    body: body || "{}",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${token}`,
+      ...identityHeaders(operator, "POST", url, forwarded),
+    },
+    body: forwarded,
   });
 }
 

@@ -3,6 +3,41 @@
 Harness: `backend/evals/run_eval.py` (frozen scenarios, rng seed 42, as_of 2026-11-07T18:00Z, dedicated
 `payops_eval` DB). Results: `reports/evaluation-results.json`. Run date: 2026-11-08. Python 3.12.13.
 
+## Current results (2026-11-08, after the prize-review audit)
+Raw data: [`reports/evaluation-results-2026-11-08-claude-5scen.json`](../reports/evaluation-results-2026-11-08-claude-5scen.json)
+(`python -m evals.run_eval --ai 5`, model `claude-opus-5-5`, tool budget 8). Changes since the earlier runs below:
+
+- **Fair baseline.** It now scans all five dimensions (it used to skip `channel` and `product_category`) and prefers
+  the finer slice on a near-tie (a SKU over its category, ≥ 90% of the share). Seed 42: 5/5 primary root cause.
+  Over 20 seeds: partner_and_sku 13/20, single_partner 20/20, single_sku 18/20, region_outage 20/20,
+  channel_bug 20/20 (91/100).
+- **Answer key.** The partner_and_sku driver is the pair SwiftShip-EU × EU, so `region=EU` now counts as naming that
+  cause (scored via `Scenario.equivalents`).
+- **Cause claims.** A matching number no longer decides causality. Root causes need a structured cause claim that
+  explains ≥ 25% of the excess refunds (`CAUSE_VERIFIED`); a ruled-out slice below 25% is `NOT_CAUSE_VERIFIED`; a
+  claimed cause below 25% is `CONTRADICTED`; a ruled-out slice above 25% is `UNRESOLVED`. A share-only symmetric rule
+  was tried first and rejected: within a dimension the shares sum to 1, so unrelated slices (e.g. channel=mobile at
+  0.62 in the ParcelOne scenario) cleared it and the checker "contradicted" correct model judgements. A 10-seed probe
+  found no single-slice threshold (share and rate lift) that separates causes from confounded slices.
+
+| | Baseline (seed 42) | Claude, 5 scenarios |
+|---|---|---|
+| Primary root cause | 5/5 | 5/5 |
+| Cause recall (mean) | 0.9 | 1.0 |
+| Cause precision (mean) | — | 1.0 |
+| Numeric claims matching source | — | 84/84 |
+| Root-cause gate passed | 5/5 | 5/5 |
+| Cause claims | 1 per scenario | 6 CAUSE_VERIFIED · 8 NOT_CAUSE_VERIFIED · 12 UNRESOLVED |
+| Latency / cost | ~0.1 s / $0 | ~28.7 s / ~$0.13 per investigation |
+
+Reading: on these planted, separable scenarios the fair baseline finds the primary cause too; the AI's measurable
+edge is the second cause (recall 1.0 vs 0.9) and a checked explanation. The earlier "AI 5/5 vs baseline 3/5" came
+from a handicapped baseline and the label issue above. Detection (P 1.0 / R 1.0) and safety (16/16, 0 unauthorized
+executions) are unchanged. Journey C (S01) feeds the $500 injected proposal to `service.propose` directly to simulate
+a compromised model; it does not test what a live model chooses.
+
+The sections below are the earlier runs, kept for history.
+
 ## A. Detection (8 frozen synthetic scenarios)
 | Scenario | Expected | Fired | Pass |
 |---|---|---|---|

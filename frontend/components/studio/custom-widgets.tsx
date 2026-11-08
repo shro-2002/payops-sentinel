@@ -1,5 +1,6 @@
 "use client";
 
+import { evidenceBadge } from "@/lib/evidence-label";
 import { useWorkspace } from "@/lib/workspace-store";
 
 // Real AG Studio custom widget components (registered via createWidgets.additionalTypes).
@@ -32,8 +33,8 @@ export function EvidenceInspectorWidget() {
               className="claim-row group flex w-full items-start gap-3 px-3 py-2 text-left hover:bg-ink-800 focus-visible:bg-ink-800"
               data-testid="claim-row"
             >
-              <span className={e.verification === "VERIFIED" ? "badge badge-ok shrink-0" : "badge badge-bad shrink-0"}>
-                {e.verification}
+              <span className={`${evidenceBadge(e).className} shrink-0`}>
+                {evidenceBadge(e).text}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-sm leading-snug">{e.statement}</span>

@@ -50,7 +50,7 @@ export interface Evidence {
   metric_path: string;
   claimed_value: string;
   source_value: string | null;
-  verification: "VERIFIED" | "UNSUPPORTED";
+  verification: "VERIFIED" | "UNSUPPORTED" | "CAUSE_VERIFIED" | "NOT_CAUSE_VERIFIED" | "CONTRADICTED" | "UNRESOLVED";
   reason: string | null;
 }
 

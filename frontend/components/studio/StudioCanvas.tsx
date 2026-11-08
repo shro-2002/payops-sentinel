@@ -106,6 +106,12 @@ export default function StudioCanvas({ storageKey, label, data, initialState, he
         <h2 className="text-sm font-semibold text-fg">{label}</h2>
         <span className="text-xs text-fg-faint">AG Studio · layout saved in this browser</span>
         <div className="ml-auto flex gap-2">
+          {/* AG Studio mounts its AI assistant panel only in edit mode (view mode allows just `filters`). */}
+          {config?.aiEnabled && mode === "view" && (
+            <button type="button" className="btn btn-primary" onClick={() => setMode("edit")}>
+              Ask AI about this incident
+            </button>
+          )}
           <button type="button" className="btn btn-ghost" aria-pressed={mode === "edit"} onClick={() => setMode((m) => (m === "view" ? "edit" : "view"))}>
             {mode === "view" ? "Edit layout" : "Done editing"}
           </button>

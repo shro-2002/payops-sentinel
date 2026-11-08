@@ -201,7 +201,7 @@ class EvidenceRecord(TimestampMixin, Base):
     metric_path: Mapped[str] = mapped_column(String(200), nullable=False)
     claimed_value: Mapped[str] = mapped_column(String(64), nullable=False)
     source_value: Mapped[str | None] = mapped_column(String(64))
-    verification: Mapped[str] = mapped_column(String(16), nullable=False)  # VERIFIED | UNSUPPORTED
+    verification: Mapped[str] = mapped_column(String(24), nullable=False)  # VERIFIED | UNSUPPORTED | CAUSE_VERIFIED | NOT_CAUSE_VERIFIED | CONTRADICTED | UNRESOLVED
     reason: Mapped[str | None] = mapped_column(Text)
 
 

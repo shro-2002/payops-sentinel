@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.actions import service
 from app.actions.service import ActionError
+from app.api.identity import IdentityError, resolve_operator
 from app.config import get_settings
 from app.db.models import (ActionProposal, AgentToolCall, ApprovalDecision, AuditEvent, Capture, EvidenceRecord,
                            FinancialExecution, Finding, Incident, InvestigationRun, PayPalEvent, Refund,
@@ -44,16 +45,25 @@ def paypal_client() -> PayPalClient:
     return PayPalClient(c.paypal_client_id, c.paypal_client_secret, c.paypal_base_url)
 
 
-def operator(authorization: str = Header(default=""), x_operator: str = Header(default="")) -> str:
-    token = get_settings().operator_token
+async def operator(request: Request, authorization: str = Header(default=""), x_operator: str = Header(default=""),
+                   x_operator_ts: str = Header(default=""), x_operator_sig: str = Header(default=""),
+                   x_operator_nonce: str = Header(default="")) -> str:
+    cfg = get_settings()
+    token = cfg.operator_token
     if not token:
         raise HTTPException(503, detail={"code": "WRITES_DISABLED", "message": "operator token not configured"})
     presented = authorization.removeprefix("Bearer ").strip()
     if not hmac.compare_digest(presented.encode(), token.encode()):
         raise HTTPException(401, detail={"code": "UNAUTHORIZED", "message": "operator token required"})
-    # Identity is asserted by the console proxy, which authenticated the human; only trusted with a valid token.
-    name = x_operator if re.fullmatch(r"[A-Za-z0-9._-]{1,32}", x_operator or "") else "console"
-    return f"operator:{name.lower()}"
+    # The token proves a trusted caller; WHO is acting needs the proxy's signature (see app/api/identity.py).
+    try:
+        name = resolve_operator(header=x_operator, ts=x_operator_ts, sig=x_operator_sig, nonce=x_operator_nonce,
+                                method=request.method, path=request.url.path, query=request.url.query,
+                                body=await request.body(), public_key_b64=cfg.operator_identity_public_key,
+                                local_console=cfg.local_console)
+    except IdentityError as e:
+        raise HTTPException(401, detail={"code": "OPERATOR_IDENTITY_INVALID", "message": str(e)}) from e
+    return f"operator:{name}"
 
 
 def _err(e: ActionError):

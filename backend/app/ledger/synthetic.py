@@ -42,13 +42,21 @@ class Scenario:
     drivers: tuple[Driver, ...] = ()
     expect_fire: bool = True
     truth: tuple[tuple[str, str], ...] = field(default_factory=tuple)  # (dimension, value) causes
+    # Other slices that name the same planted cause: when a driver matches on two dimensions, either one is a
+    # correct single-dimension answer. Maps an alternate (dimension, value) to the canonical truth entry.
+    equivalents: dict = field(default_factory=dict)
+
+    def canonical(self, cause: tuple[str, str]) -> tuple[str, str]:
+        return self.equivalents.get(cause, cause)
 
 
 SCENARIOS = {s.name: s for s in [
     Scenario("partner_and_sku", "Multi-cause: SwiftShip-EU non-delivery + HDPH-200 defect batch",
              drivers=(Driver({"fulfillment_partner": "SwiftShip-EU", "region": "EU"}, 0.42, "ITEM_NOT_RECEIVED", 0.3),
                       Driver({"product_sku": "HDPH-200"}, 0.35, "DEFECTIVE", 0.2)),
-             truth=(("fulfillment_partner", "SwiftShip-EU"), ("product_sku", "HDPH-200"))),
+             truth=(("fulfillment_partner", "SwiftShip-EU"), ("product_sku", "HDPH-200")),
+             # The first driver is the pair SwiftShip-EU x EU, so region=EU names the same cause.
+             equivalents={("region", "EU"): ("fulfillment_partner", "SwiftShip-EU")}),
     Scenario("single_partner", "Single cause: ParcelOne loses parcels",
              drivers=(Driver({"fulfillment_partner": "ParcelOne"}, 0.40, "ITEM_NOT_RECEIVED", 0.35),),
              truth=(("fulfillment_partner", "ParcelOne"),)),

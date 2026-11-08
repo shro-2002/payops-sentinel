@@ -25,5 +25,25 @@ def test_baseline_finds_single_cause_and_claims_verify(db):
     from app.db.models import Finding
     f = db.query(Finding).filter_by(investigation_id=run.id).one()
     assert (f.root_cause_dimension, f.root_cause_value) == ("fulfillment_partner", "ParcelOne")
-    assert f.unsupported_claim_count == 0 and f.verified_claim_count == 2
-    assert run.tool_calls_used == 4
+    assert f.unsupported_claim_count == 0 and f.verified_claim_count == 3  # 2 numbers + 1 cause claim
+    assert inc.root_cause_identified
+    assert run.tool_calls_used == 6  # context + top_contributors over all 5 dimensions
+
+
+def test_baseline_prefers_finer_slice_on_near_tie_only():
+    from app.investigator.agent import _pick_baseline_cause
+    cat = ("product_category", "electronics", {"share_of_excess": 0.883}, "Q4")
+    sku = ("product_sku", "CHRG-30W", {"share_of_excess": 0.878}, "Q3")
+    weak_sku = ("product_sku", "HDPH-200", {"share_of_excess": 0.40}, "Q3")
+    assert _pick_baseline_cause([cat, sku, weak_sku])[1] == "CHRG-30W"
+    assert _pick_baseline_cause([cat, weak_sku])[1] == "electronics"
+    assert _pick_baseline_cause([]) is None
+
+
+def test_channel_cause_is_found_by_the_baseline(db):
+    seed(db, SCENARIOS["channel_bug"], AS_OF)
+    inc = run_detector(db, AS_OF)
+    run = run_baseline_investigation(db, inc)
+    from app.db.models import Finding
+    f = db.query(Finding).filter_by(investigation_id=run.id).one()
+    assert (f.root_cause_dimension, f.root_cause_value) == ("channel", "marketplace")

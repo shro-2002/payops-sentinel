@@ -156,7 +156,7 @@ def test_query_id_from_another_investigation_is_rejected(db):
     assert first.status == second.status == "COMPLETED"
     f = db.scalars(select(Finding).where(Finding.investigation_id == second.id)).one()
     assert f.verified_claim_count == 0 and f.unsupported_claim_count == 1
-    assert not inc.root_cause_identified or True
+    assert not inc.root_cause_identified  # neither run made a cause claim, so no root cause is identified
 
 
 def test_invalid_tool_and_args_rejected_and_budget_enforced(db):
@@ -286,6 +286,25 @@ def test_root_cause_needs_a_verified_claim_about_that_value(db):
     assert run.status == "COMPLETED" and not inc.root_cause_identified
 
 
+@pytest.mark.parametrize("is_cause, identified", [(False, False), (True, True)])
+def test_root_cause_identified_only_by_a_passing_cause_claim(db, is_cause, identified):
+    inc = _incident(db)
+    run = run_ai_investigation(db, inc, ScriptedLLM(
+        [[("top_contributors", {"dimension": "fulfillment_partner"})]], lambda seen: {
+            "hypothesis": "h", "observed_anomaly": "o", "explanation": "e", "uncertainty": "u", "confidence": "low",
+            "recommended_action": "MANUAL_REVIEW", "root_cause": {"dimension": "fulfillment_partner",
+                                                                  "value": "SwiftShip-EU"},
+            "cause_claims": [{"dimension": "fulfillment_partner", "value": "SwiftShip-EU", "is_cause": is_cause,
+                              "query_id": "Q1", "explained_share":
+                                  str(seen[0][1]["result"]["by_value"]["SwiftShip-EU"]["share_of_excess"])}]}))
+    db.commit()
+    db.refresh(inc)
+    assert run.status == "COMPLETED", run.error
+    assert inc.root_cause_identified is identified
+    [ev] = db.scalars(select(EvidenceRecord)).all()
+    assert ev.verification == ("CAUSE_VERIFIED" if is_cause else "UNRESOLVED")
+
+
 def test_claim_must_name_its_slice_and_percent_only_for_rates(db):
     inc = _incident(db)
     run = run_ai_investigation(db, inc, ScriptedLLM([[("slice_metric", {"dimension": "fulfillment_partner"})]],
@@ -377,7 +396,8 @@ def test_replay_mode_reexecutes_tools_and_reverifies_claims(db):
     calls = db.scalars(select(AgentToolCall).where(AgentToolCall.investigation_id == run.id)).all()
     assert len(calls) == sum(len(t) for t in llm._turns) and all(c.result or c.error for c in calls)
     f = db.scalars(select(Finding).where(Finding.investigation_id == run.id)).one()
-    assert f.verified_claim_count + f.unsupported_claim_count == len(llm._final["claims"])
+    evidence = db.scalars(select(EvidenceRecord).where(EvidenceRecord.finding_id == f.id)).all()
+    assert len(evidence) == len(llm._final["claims"]) + len(llm._final["cause_claims"])  # every claim re-checked
     assert (run.input_tokens, run.output_tokens) == (0, 0)  # no LLM was called
 
 

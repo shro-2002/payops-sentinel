@@ -21,6 +21,10 @@ export function setWorkspace(next: WorkspaceSnapshot): void {
   listeners.forEach((l) => l());
 }
 
+export function getWorkspace(): WorkspaceSnapshot {
+  return snapshot;
+}
+
 function subscribe(listener: () => void) {
   listeners.add(listener);
   return () => listeners.delete(listener);
