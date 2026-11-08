@@ -19,7 +19,7 @@
     "ag-studio": "3.1.0",
     "ag-studio-react": "3.1.0",
     "next": "15.5.29",
-    "react": "19.1.10",
+    "react": "19.3.1",
     "react-dom": "19.1.10"
   },
   "devDependencies": {
