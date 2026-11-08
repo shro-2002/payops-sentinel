@@ -1,4 +1,4 @@
-SQLAlchemy==2.0.40
+SQLAlchemy==2.1.6
 alembic==1.15.2
 anthropic==2.6.0
 fastapi==0.161.1
