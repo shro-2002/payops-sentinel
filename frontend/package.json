@@ -18,7 +18,7 @@
     "ag-grid-react": "36.3.0",
     "ag-studio": "3.1.0",
     "ag-studio-react": "3.1.0",
-    "next": "15.5.29",
+    "next": "16.4.3",
     "react": "19.1.10",
     "react-dom": "19.1.10"
   },
