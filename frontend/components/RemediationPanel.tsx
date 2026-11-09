@@ -19,7 +19,7 @@ export function RemediationPanel({ cases, busy, onDraft }: Props) {
       {cases.length === 0 && <p className="mt-3 text-sm text-fg-muted">No remediation cases linked to this incident.</p>}
       <ul className="mt-3 space-y-3">
         {cases.map((c) => (
-          <li key={c.case_ref} className="rounded-md border border-line bg-ink-950 p-3" data-testid={`case-${c.case_ref}`}>
+          <li key={c.case_ref} id={`case-${c.case_ref}`} className="scroll-mt-4 rounded-md border border-line bg-ink-950 p-3" data-testid={`case-${c.case_ref}`}>
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="font-mono font-semibold">{c.case_ref}</span>
               <span className="badge badge-neutral">{c.issue_type}</span>

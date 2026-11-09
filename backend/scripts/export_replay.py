@@ -25,7 +25,7 @@ def main() -> None:
         for t in run.trace:
             if t.get("step") == "tool":
                 turns[t["turn"]].append({"name": t["tool"], "args": t["args"]})
-        extra = {t["step"]: t["value"] for t in run.trace if t.get("step") in ("secondary_causes", "hypotheses", "cause_checks")}
+        extra = {t["step"]: t["value"] for t in run.trace if t.get("step") in ("secondary_causes", "hypotheses")}
         evidence = s.scalars(select(EvidenceRecord).where(EvidenceRecord.finding_id == f.id)).all()
         final = {"hypotheses_considered": extra.get("hypotheses", []), "hypothesis": f.hypothesis,
                  "observed_anomaly": f.observed_anomaly, "explanation": f.explanation, "uncertainty": f.uncertainty,
@@ -35,7 +35,7 @@ def main() -> None:
                  "secondary_causes": extra.get("secondary_causes", []), "recommended_action": f.recommended_action,
                  "claims": [{"statement": e.statement, "query_id": e.query_id, "metric_path": e.metric_path,
                              "value": e.claimed_value} for e in evidence if e.verification in ("VERIFIED", "UNSUPPORTED")],
-                 "cause_claims": [{k: v for k, v in c.items() if k != "verdict"} for c in extra.get("cause_checks", [])]}
+                 "cause_claims": []}
         out = {"model": run.model, "recorded_at": run.created_at.isoformat(), "source_investigation_id": str(run.id),
                "note": "Recorded live Claude investigation. Replayed tool calls run against the current database; "
                        "claims are re-verified on replay.", "turns": [turns[k] for k in sorted(turns)], "final": final}

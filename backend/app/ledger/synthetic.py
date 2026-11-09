@@ -7,7 +7,7 @@ Each scenario declares its ground truth so the evaluation harness can score dete
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
@@ -32,6 +32,15 @@ class Driver:
 
 
 @dataclass(frozen=True)
+class Correlation:
+    """Structural (both windows): captures matching `when` take the `then` dimensions with probability p.
+    Used to build confounders: a real driver that co-occurs with an innocent slice."""
+    when: dict
+    then: dict
+    p: float
+
+
+@dataclass(frozen=True)
 class Scenario:
     name: str
     description: str
@@ -45,6 +54,11 @@ class Scenario:
     # Other slices that name the same planted cause: when a driver matches on two dimensions, either one is a
     # correct single-dimension answer. Maps an alternate (dimension, value) to the canonical truth entry.
     equivalents: dict = field(default_factory=dict)
+    correlations: tuple[Correlation, ...] = ()
+    # Slices that a correct investigator must NOT name as supported drivers (decoys built into the scenario).
+    decoys: tuple[tuple[str, str], ...] = ()
+    expect_abstain: bool = False  # the data cannot single out a driver; the correct answer is to abstain
+    overrides: tuple[str, ...] = ()  # fields set explicitly, kept when a suite applies its defaults
 
     def canonical(self, cause: tuple[str, str]) -> tuple[str, str]:
         return self.equivalents.get(cause, cause)
@@ -76,6 +90,53 @@ SCENARIOS = {s.name: s for s in [
 ]}
 
 
+# Adversarial suite for the competing-hypothesis investigator. Each one plants a misleading correlation. These run at
+# a mid-size merchant's volume (240 captures in the incident window, 100/day baseline): stratified tests need it.
+ADV_VOLUME = {"current_count": 240, "baseline_per_day": 100}
+ADVERSARIAL = {s.name: replace(s, **{k: v for k, v in ADV_VOLUME.items() if k not in s.overrides}) for s in [
+    Scenario("adv_confounded_channel",
+             "NorthPost loses parcels; NorthPost ships mostly mobile orders, so mobile looks guilty",
+             drivers=(Driver({"fulfillment_partner": "NorthPost"}, 0.38, "ITEM_NOT_RECEIVED", 0.3),),
+             correlations=(Correlation({"fulfillment_partner": "NorthPost"}, {"channel": "mobile"}, 0.85),),
+             truth=(("fulfillment_partner", "NorthPost"),), decoys=(("channel", "mobile"),)),
+    Scenario("adv_region_vs_batch",
+             "LAMP-LED defect batch sold mostly in LATAM, so LATAM (and the home category) look guilty",
+             drivers=(Driver({"product_sku": "LAMP-LED"}, 0.42, "DEFECTIVE", 0.3),),
+             correlations=(Correlation({"product_sku": "LAMP-LED"}, {"region": "LATAM"}, 0.8),),
+             truth=(("product_sku", "LAMP-LED"),), decoys=(("region", "LATAM"), ("product_category", "home"))),
+    Scenario("adv_volume_segment",
+             "Web carries 65% of volume and the most refunds at a normal rate; CASE-PRO is the real defect",
+             drivers=(Driver({"product_sku": "CASE-PRO"}, 0.45, "DEFECTIVE", 0.25),),
+             correlations=(Correlation({}, {"channel": "web"}, 0.5),),
+             truth=(("product_sku", "CASE-PRO"),), decoys=(("channel", "web"),)),
+    Scenario("adv_two_factors", "Two independent causes: BlueDart-Intl non-delivery and a MUG-CLASSIC defect",
+             drivers=(Driver({"fulfillment_partner": "BlueDart-Intl"}, 0.4, "ITEM_NOT_RECEIVED", 0.25),
+                      Driver({"product_sku": "MUG-CLASSIC"}, 0.4, "DEFECTIVE", 0.25)),
+             truth=(("fulfillment_partner", "BlueDart-Intl"), ("product_sku", "MUG-CLASSIC"))),
+    Scenario("adv_indistinguishable",
+             "Every TEE-ORG order ships with ParcelOne and vice versa: partner and SKU cannot be separated",
+             drivers=(Driver({"fulfillment_partner": "ParcelOne"}, 0.42, "ITEM_NOT_RECEIVED", 0.3),),
+             correlations=(Correlation({"product_sku": "TEE-ORG"}, {"fulfillment_partner": "ParcelOne"}, 1.0),
+                           Correlation({"fulfillment_partner": "ParcelOne"}, {"product_sku": "TEE-ORG"}, 1.0)),
+             truth=(("fulfillment_partner", "ParcelOne"),), expect_abstain=True,
+             decoys=(("product_sku", "TEE-ORG"), ("product_category", "apparel"))),
+    Scenario("adv_low_sample", "SwiftShip-EU spike plus a 5-order kiosk channel with an eye-catching refund rate",
+             drivers=(Driver({"fulfillment_partner": "SwiftShip-EU"}, 0.4, "ITEM_NOT_RECEIVED", 0.3),
+                      Driver({"channel": "kiosk"}, 0.8, "CHANGED_MIND", 0.03)),
+             truth=(("fulfillment_partner", "SwiftShip-EU"),), decoys=(("channel", "kiosk"),)),
+    Scenario("demo_carrier_and_batch",
+             "Demo world: NorthPost non-delivery (NorthPost ships mostly mobile orders, so mobile looks guilty) plus "
+             "an HDPH-200 defect batch",
+             drivers=(Driver({"fulfillment_partner": "NorthPost"}, 0.38, "ITEM_NOT_RECEIVED", 0.25),
+                      Driver({"product_sku": "HDPH-200"}, 0.35, "DEFECTIVE", 0.2)),
+             correlations=(Correlation({"fulfillment_partner": "NorthPost"}, {"channel": "mobile"}, 0.85),),
+             truth=(("fulfillment_partner", "NorthPost"), ("product_sku", "HDPH-200")),
+             decoys=(("channel", "mobile"), ("product_category", "electronics"))),
+    Scenario("adv_no_anomaly", "Normal day; any named driver is a false attribution", expect_fire=False,
+             expect_abstain=True),
+]}
+
+
 def _dims(rng: random.Random, force: dict | None = None) -> dict:
     sku = rng.choice(list(SKUS))
     d = {"product_sku": sku, "product_category": SKUS[sku], "region": rng.choice(REGIONS),
@@ -89,6 +150,15 @@ def _dims(rng: random.Random, force: dict | None = None) -> dict:
 
 def _matches(d: dict, match: dict) -> bool:
     return all(d.get(k) == v for k, v in match.items())
+
+
+def _correlate(rng: random.Random, d: dict, rules: tuple[Correlation, ...], keep: dict | None) -> dict:
+    for rule in rules:
+        if _matches(d, rule.when) and rng.random() < rule.p:
+            d = d | {k: v for k, v in rule.then.items() if not keep or k not in keep}
+            if "product_sku" in rule.then and d["product_sku"] in SKUS:
+                d["product_category"] = SKUS[d["product_sku"]]
+    return d
 
 
 def seed(s: Session, scenario: Scenario, as_of: datetime, rng_seed: int = 42) -> dict:
@@ -117,7 +187,7 @@ def seed(s: Session, scenario: Scenario, as_of: datetime, rng_seed: int = 42) ->
             if rng.random() < scenario.base_rate:
                 rwhen = min(when + timedelta(hours=rng.randint(1, 20)), window_start - timedelta(minutes=1))
                 refund = (rng.choice(NORMAL_REASONS), rwhen)
-            make(when, _dims(rng), refund)
+            make(when, _correlate(rng, _dims(rng), scenario.correlations, None), refund)
     # current window
     for _ in range(scenario.current_count):
         when = window_start + timedelta(minutes=rng.randint(1, 14 * 60))
@@ -129,7 +199,7 @@ def seed(s: Session, scenario: Scenario, as_of: datetime, rng_seed: int = 42) ->
             if roll < acc:
                 force = drv.match
                 break
-        dims = _dims(rng, force)
+        dims = _correlate(rng, _dims(rng, force), scenario.correlations, force)
         rate, reason = scenario.current_base_rate, rng.choice(NORMAL_REASONS)
         for drv in scenario.drivers:
             if _matches(dims, drv.match) and drv.rate > rate:

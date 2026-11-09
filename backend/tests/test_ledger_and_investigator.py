@@ -7,7 +7,7 @@ from app.investigator.agent import run_ai_investigation
 from app.investigator.evidence import execute_tool
 from app.investigator.tools import TOOLS
 from app.ledger.ingest import CaptureDims, ingest_event, upsert_capture, upsert_refund
-from app.ledger.synthetic import SCENARIOS, seed
+from app.ledger.synthetic import ADVERSARIAL, SCENARIOS, seed
 from conftest import AS_OF
 
 CAP_PAYLOAD = {"id": "CAPWH0001", "status": "COMPLETED", "amount": {"value": "20.00", "currency_code": "USD"},
@@ -105,7 +105,7 @@ def test_investigator_has_no_write_tools():
     import pathlib
     assert set(TOOLS) == {"get_incident_context", "slice_metric", "top_contributors", "compare_windows",
                           "refund_reasons", "cross_slice", "get_transaction", "list_related_events",
-                          "paypal_order_lookup"}
+                          "paypal_order_lookup", "test_hypothesis"}
     src = "".join(p.read_text() for p in pathlib.Path("app/investigator").glob("*.py"))
     import re
     patterns = [r"PayPalClient", r"app\.actions", r"refund_capture", r"integrations\.paypal\.client",
@@ -136,8 +136,11 @@ def test_claims_verified_against_tool_results_and_fakes_rejected(db):
     db.commit()
     assert run.status == "COMPLETED", run.error
     f = db.scalars(select(Finding).where(Finding.investigation_id == run.id)).one()
-    assert (f.verified_claim_count, f.unsupported_claim_count) == (1, 3)
     verdicts = {e.statement: e.verification for e in db.scalars(select(EvidenceRecord))}
+    challenge = db.scalars(select(EvidenceRecord).where(EvidenceRecord.query_id == "S1")).one().verification
+    supported = challenge == "ASSOCIATION_SUPPORTED"
+    # 1 good number + 3 bad ones; the server's challenge of the named driver counts on whichever side it lands
+    assert (f.verified_claim_count, f.unsupported_claim_count) == (1 + supported, 3 + (challenge == "CONTRADICTED"))
     assert verdicts["SwiftShip-EU partner rate"] == "VERIFIED" and verdicts["made-up number for SwiftShip-EU"] == "UNSUPPORTED"
 
 
@@ -286,23 +289,29 @@ def test_root_cause_needs_a_verified_claim_about_that_value(db):
     assert run.status == "COMPLETED" and not inc.root_cause_identified
 
 
-@pytest.mark.parametrize("is_cause, identified", [(False, False), (True, True)])
-def test_root_cause_identified_only_by_a_passing_cause_claim(db, is_cause, identified):
-    inc = _incident(db)
+@pytest.mark.parametrize("named, identified", [(("channel", "mobile"), False),
+                                                (("fulfillment_partner", "NorthPost"), True)])
+def test_driver_identified_only_when_the_server_challenge_supports_it(db, named, identified):
+    """A material share is not enough: the confounded slice (mobile) takes a big share of the excess and the model even
+    cites it as a cause, but the server's own falsification test decides."""
+    seed(db, ADVERSARIAL["adv_confounded_channel"], AS_OF, rng_seed=1)
+    inc = run_detector(db, AS_OF)
+    db.commit()
+    dim, value = named
     run = run_ai_investigation(db, inc, ScriptedLLM(
-        [[("top_contributors", {"dimension": "fulfillment_partner"})]], lambda seen: {
+        [[("top_contributors", {"dimension": dim})]], lambda seen: {
             "hypothesis": "h", "observed_anomaly": "o", "explanation": "e", "uncertainty": "u", "confidence": "low",
-            "recommended_action": "MANUAL_REVIEW", "root_cause": {"dimension": "fulfillment_partner",
-                                                                  "value": "SwiftShip-EU"},
-            "cause_claims": [{"dimension": "fulfillment_partner", "value": "SwiftShip-EU", "is_cause": is_cause,
-                              "query_id": "Q1", "explained_share":
-                                  str(seen[0][1]["result"]["by_value"]["SwiftShip-EU"]["share_of_excess"])}]}))
+            "recommended_action": "MANUAL_REVIEW", "root_cause": {"dimension": dim, "value": value},
+            "cause_claims": [{"dimension": dim, "value": value, "is_cause": True, "query_id": "Q1",
+                              "explained_share": str(seen[0][1]["result"]["by_value"][value]["share_of_excess"])}]}))
     db.commit()
     db.refresh(inc)
     assert run.status == "COMPLETED", run.error
     assert inc.root_cause_identified is identified
-    [ev] = db.scalars(select(EvidenceRecord)).all()
-    assert ev.verification == ("CAUSE_VERIFIED" if is_cause else "UNRESOLVED")
+    assert inc.status == ("DRIVER_SUPPORTED" if identified else "OPEN")
+    verdicts = {e.query_id: e.verification for e in db.scalars(select(EvidenceRecord)).all()}
+    assert verdicts["S1"] == ("ASSOCIATION_SUPPORTED" if identified else "CONTRADICTED")
+    assert verdicts["Q1"] == "SHARE_MATERIAL"  # the share looked convincing either way
 
 
 def test_claim_must_name_its_slice_and_percent_only_for_rates(db):
@@ -394,10 +403,13 @@ def test_replay_mode_reexecutes_tools_and_reverifies_claims(db):
     db.commit()
     assert run.status == "COMPLETED" and run.mode == "REPLAY" and run.model.startswith("replay:claude")
     calls = db.scalars(select(AgentToolCall).where(AgentToolCall.investigation_id == run.id)).all()
-    assert len(calls) == sum(len(t) for t in llm._turns) and all(c.result or c.error for c in calls)
+    model_calls = [c for c in calls if c.query_id.startswith("Q")]
+    assert len(model_calls) == sum(len(t) for t in llm._turns) and all(c.result or c.error for c in calls)
+    named = 1 + len(llm._final.get("secondary_causes") or [])
+    assert len(calls) - len(model_calls) == named  # one server challenge per named driver
     f = db.scalars(select(Finding).where(Finding.investigation_id == run.id)).one()
     evidence = db.scalars(select(EvidenceRecord).where(EvidenceRecord.finding_id == f.id)).all()
-    assert len(evidence) == len(llm._final["claims"]) + len(llm._final["cause_claims"])  # every claim re-checked
+    assert len(evidence) == len(llm._final["claims"]) + len(llm._final["cause_claims"]) + named  # all re-checked
     assert (run.input_tokens, run.output_tokens) == (0, 0)  # no LLM was called
 
 

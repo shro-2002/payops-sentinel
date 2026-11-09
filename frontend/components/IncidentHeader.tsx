@@ -37,7 +37,7 @@ export function IncidentHeader({ incident, proposals }: { incident: Incident; pr
             Deterministic detector numbers
             {incident.created_at && (
               <span className="ml-2 font-mono text-xs font-normal normal-case text-fg-faint">
-                snapshot at detection {incident.created_at} · investigation queries read the live ledger, so refunds
+                detector snapshot (incident opened {incident.created_at}; recomputed if the synthetic history was reseeded) · investigation queries read the live ledger, so refunds
                 recorded later in the same window show up there
               </span>
             )}
@@ -82,22 +82,30 @@ export function IncidentHeader({ incident, proposals }: { incident: Incident; pr
 
       <ol className="mt-4 grid gap-3 md:grid-cols-3" aria-label="Incident milestones (independent states)">
         <Milestone
-          testId="ms-root-cause"
-          label="Root cause identified"
+          testId="ms-driver"
+          label="AI investigation: named driver confirmed"
           done={incident.root_cause_identified}
-          detail="An investigation produced a finding whose claims verified against stored tool results."
+          detail={
+            incident.root_cause_identified
+              ? "A driver the AI named survived the server's falsification challenge. An association, not a proven root cause."
+              : "No AI-named driver has passed the server's challenge yet (run an investigation). The independent challenger's own verdict is in Incident command below."
+          }
         />
         <Milestone
           testId="ms-corrective"
-          label="Corrective action completed"
+          label="Individual refund cases settled"
           done={executed.length > 0}
-          detail={executed.length ? `${executed.length} refund(s) executed and verified at PayPal.` : "No action has been executed and verified at the provider."}
+          detail={
+            executed.length
+              ? `${executed.length} refund(s) executed and verified at PayPal. They settle individual customer cases; they do not resolve the incident.`
+              : "No refund has been executed and verified at PayPal. Refunds settle individual cases, never the incident."
+          }
         />
         <Milestone
           testId="ms-resolved"
           label="Aggregate incident resolved"
           done={incident.status === "RESOLVED"}
-          detail="Only true once the detector sees the refund rate back within threshold. One refund does not resolve a rate spike."
+          detail="Only true once the detector sees the refund rate back within threshold. Refunds never mark the incident resolved."
         />
       </ol>
     </section>

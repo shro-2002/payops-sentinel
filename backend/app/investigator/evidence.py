@@ -6,15 +6,13 @@ A claim is VERIFIED only when:
   3. the claimed number equals the source number (rates may be stated as fraction or percent).
 Anything else is UNSUPPORTED and excluded from the verified conclusion.
 
-A VERIFIED number says only "this value is in that result". Whether a slice is a CAUSE is a separate, structured
-`CauseClaim` ({dimension, value, is_cause, explained_share, query_id}) checked against one deterministic, stated rule:
-a cause must explain at least CAUSE_SHARE_THRESHOLD of the excess refunds in the cited top_contributors result.
-That is a necessary condition, not proof of causality (marginal shares cannot separate a cause from a confounded
-slice), so the check is asymmetric:
-  is_cause=true,  share >= threshold -> CAUSE_VERIFIED      share < threshold  -> CONTRADICTED
-  is_cause=false, share <  threshold -> NOT_CAUSE_VERIFIED  share >= threshold -> UNRESOLVED (the rule cannot confirm
-                                                                                 a confounding argument)
-A root cause counts only when its cause claim is CAUSE_VERIFIED; prose and statements never decide it.
+A VERIFIED number says only "this value is in that result". Whether a slice drives the spike is decided by
+neither the model nor a share threshold. Every driver the model names (root_cause, secondary_causes) is re-tested
+server-side by the deterministic falsification engine (app.investigator.hypotheses): sample size, rate lift vs the
+rest of the window and vs its own baseline, persistence within every other dimension, drill-down and head-to-head.
+Only ASSOCIATION_SUPPORTED marks the incident DRIVER_SUPPORTED, and it means "suspected contributing factor", never
+proven causation. The model's optional `cause_claims` (share_of_excess) are kept as information only: shares are
+normalised to sum to 1, so a confounded or merely large slice can take a big share without driving anything.
 """
 
 from __future__ import annotations
@@ -29,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import AgentToolCall, EvidenceRecord, Finding, Incident, InvestigationRun
+from app.investigator.hypotheses import CONTRADICTED, DIMS, SUPPORTED, challenge_hypothesis
 from app.investigator.tools import TOOLS, ToolArgumentError
 
 RATE_TOLERANCE = Decimal("0.0006")
@@ -171,7 +170,8 @@ def check_claim(claim: Claim, calls_by_qid: dict[str, AgentToolCall]) -> tuple[s
 
 
 def check_cause_claim(cc: CauseClaim, calls_by_qid: dict[str, AgentToolCall]) -> tuple[str, str | None, str]:
-    """Verdict for one cause claim against the share rule (see module docstring); UNSUPPORTED when the cited share
+    """Information only: is the model's cited share_of_excess right, and is it above the old 0.25 rule?
+    SHARE_* verdicts never decide whether a slice is a driver (see module docstring); UNSUPPORTED when the cited share
     can't be read or doesn't match."""
     call = calls_by_qid.get(cc.query_id)
     if call is None or call.status != "OK" or call.result is None:
@@ -190,11 +190,7 @@ def check_cause_claim(cc: CauseClaim, calls_by_qid: dict[str, AgentToolCall]) ->
         return "UNSUPPORTED", str(share), f"claimed share {cc.explained_share} but source has {share}"
     material = share >= CAUSE_SHARE_THRESHOLD
     rule = f"share_of_excess {share} {'>=' if material else '<'} {CAUSE_SHARE_THRESHOLD}"
-    if cc.is_cause:
-        return ("CAUSE_VERIFIED" if material else "CONTRADICTED"), str(share), rule
-    if material:
-        return "UNRESOLVED", str(share), f"{rule}: ruling out a material slice needs evidence the share rule can't check"
-    return "NOT_CAUSE_VERIFIED", str(share), rule
+    return ("SHARE_MATERIAL" if material else "SHARE_IMMATERIAL"), str(share), f"{rule} (share only: not a driver test)"
 
 
 def persist_finding(s: Session, run: InvestigationRun, inc: Incident, draft: FindingDraft) -> Finding:
@@ -216,32 +212,33 @@ def persist_finding(s: Session, run: InvestigationRun, inc: Incident, draft: Fin
                              source_value=src, verification=verdict, reason=reason))
         verified += verdict == "VERIFIED"
         unsupported += verdict != "VERIFIED"
-    cause_verdicts = []
     for cc in draft.cause_claims:
         verdict, src, reason = check_cause_claim(cc, by_qid)
-        cause_verdicts.append((cc, verdict))
         call = by_qid.get(cc.query_id)
-        label = "is a cause" if cc.is_cause else "is not a cause"
         s.add(EvidenceRecord(finding_id=f.id, tool_call_id=call.id if call else None, query_id=cc.query_id,
-                             statement=f"Model: {cc.dimension}={cc.value} {label} (rule: a cause explains >= "
-                             f"{CAUSE_SHARE_THRESHOLD} of excess refunds)", metric_path=f"by_value/{cc.value}/share_of_excess",
-                             claimed_value=cc.explained_share, source_value=src, verification=verdict, reason=reason))
-        verified += verdict.endswith("_VERIFIED")
-        unsupported += verdict in ("UNSUPPORTED", "CONTRADICTED")  # UNRESOLVED is neither: reported on its own
+                             statement=f"Model cites {cc.dimension}={cc.value} share of excess refunds "
+                             f"({'claimed driver' if cc.is_cause else 'claimed non-driver'}; share alone decides nothing)",
+                             metric_path=f"by_value/{cc.value}/share_of_excess", claimed_value=cc.explained_share,
+                             source_value=src, verification=verdict, reason=reason))
+        unsupported += verdict == "UNSUPPORTED"
+    driver_verdicts = challenge_named_drivers(s, run, inc, f, draft)
+    verified += sum(v == SUPPORTED for v in driver_verdicts.values())
+    unsupported += sum(v == CONTRADICTED for v in driver_verdicts.values())
     f.verified_claim_count, f.unsupported_claim_count = verified, unsupported
     verified_values = [Decimal(src) for c in draft.claims for v, src, _ in [check_claim(c, by_qid)]
                        if v == "VERIFIED" and src is not None and _is_num(src)]
     prose = " ".join([draft.explanation, draft.hypothesis, draft.observed_anomaly])
-    # A root cause only counts as identified when a structured cause claim on that slice passes the threshold rule.
-    if rc and _root_cause_backed(rc, cause_verdicts):
+    # The incident gets a suspected driver only when the server's own challenge supports the model's primary driver.
+    if rc and driver_verdicts.get((rc.dimension, rc.value)) == SUPPORTED:
         inc.root_cause_identified = True
-        inc.status = "ROOT_CAUSE_IDENTIFIED" if inc.status == "OPEN" else inc.status
+        inc.status = "DRIVER_SUPPORTED" if inc.status == "OPEN" else inc.status
     run.trace = list(run.trace or []) + [{"step": "prose_unverified_numbers",
                                           "value": unbacked_numbers(prose, verified_values)},
                                          {"step": "secondary_causes",
                                           "value": [c.model_dump() for c in draft.secondary_causes]},
-                                         {"step": "cause_checks",
-                                          "value": [{**cc.model_dump(), "verdict": v} for cc, v in cause_verdicts]},
+                                         {"step": "driver_challenges",
+                                          "value": [{"dimension": d, "value": v, "verdict": verdict}
+                                                    for (d, v), verdict in driver_verdicts.items()]},
                                          {"step": "hypotheses", "value": [h.model_dump() for h in draft.hypotheses_considered]}]
     return f
 
@@ -273,7 +270,45 @@ def unbacked_numbers(prose: str, verified: list[Decimal]) -> list[str]:
     return sorted(set(out))
 
 
-def _root_cause_backed(rc: CauseRef, cause_verdicts: list[tuple[CauseClaim, str]]) -> bool:
-    """Identified only if a cause claim on exactly this slice says is_cause and passes the threshold rule."""
-    return any(cc.dimension == rc.dimension and cc.value == rc.value and v == "CAUSE_VERIFIED"
-               for cc, v in cause_verdicts)
+def challenge_named_drivers(s: Session, run: InvestigationRun, inc: Incident, f: Finding,
+                            draft: FindingDraft) -> dict[tuple[str, str], str]:
+    """Independently re-test every driver the model named. Each test is stored as a server tool call (query id
+    S1, S2, ...; outside the model's tool budget) and as an evidence record citing it.
+
+    Same two-pass rule as the challenger: a named driver that failed only on lift (no confounder, no refinement) is
+    re-tested outside another named driver that already passed, so two independent drivers can both stand."""
+    named = list(dict.fromkeys((r.dimension, r.value[:64]) for r in
+                               ([draft.root_cause] if draft.root_cause else []) + list(draft.secondary_causes)))
+    results: dict[tuple[str, str], dict] = {}
+    for ref in named:
+        results[ref] = (challenge_hypothesis(s, inc, *ref) if ref[0] in DIMS else
+                        {"status": CONTRADICTED, "reason": f"{ref[0]} is not an investigable dimension"})
+    passed = [r for r in named if results[r]["status"] == SUPPORTED]
+    primary = (draft.root_cause.dimension, draft.root_cause.value[:64]) if draft.root_cause else None
+    for ref in named:
+        res = results[ref]
+        if ref == primary:
+            continue  # the primary driver must pass unconditionally; only secondaries get the conditional re-test
+        if ref[0] in DIMS and res["status"] == CONTRADICTED and not (
+                res.get("explained_by") or res.get("refined_to") or res.get("challenges")):
+            for other in (p for p in passed if p[0] != ref[0]):
+                retry = challenge_hypothesis(s, inc, *ref, exclude=other)
+                if retry["status"] == SUPPORTED:
+                    results[ref] = retry
+                    break
+    verdicts: dict[tuple[str, str], str] = {}
+    for i, ref in enumerate(named, start=1):
+        res = results[ref]
+        verdicts[ref] = res["status"]
+        call = AgentToolCall(investigation_id=run.id, query_id=f"S{i}", seq=1000 + i, tool_name="server_challenge",
+                             arguments={"dimension": ref[0], "value": ref[1]},
+                             status="OK" if ref[0] in DIMS else "REJECTED", result=res)
+        s.add(call)
+        s.flush()
+        role = "primary driver" if ref == primary else "secondary driver"
+        s.add(EvidenceRecord(finding_id=f.id, tool_call_id=call.id, query_id=call.query_id,
+                             statement=f"Server challenge of the model's {role} {ref[0]}={ref[1]}",
+                             metric_path="status", claimed_value="ASSOCIATION_SUPPORTED",
+                             source_value=res["status"], verification=res["status"],
+                             reason=str(res.get("reason", ""))[:500]))
+    return verdicts

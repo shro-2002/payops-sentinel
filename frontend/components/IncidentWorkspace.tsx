@@ -6,12 +6,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { apiPost, useApi, type ApiError } from "@/lib/api";
 import { INVESTIGATION_STATE, investigationData } from "@/lib/studio-reports";
-import type { Capture, Evidence, IncidentDetail, Investigation, Proposal } from "@/lib/types";
+import type { Capture, Evidence, IncidentCommand, IncidentDetail, Investigation, Proposal } from "@/lib/types";
 import { setWorkspace } from "@/lib/workspace-store";
 
 import { AuditGrid } from "./AuditGrid";
+import { CohortPanel, ResponsePlanPanel } from "./CohortAndPlan";
 import { ConfirmButton } from "./ConfirmButton";
 import { EvidenceDrawer } from "./EvidenceDrawer";
+import { CommandSummary, HypothesesPanel } from "./IncidentCommand";
 import { IncidentHeader } from "./IncidentHeader";
 import { ProposalsPanel, type ProposalInput } from "./ProposalsPanel";
 import { RemediationPanel } from "./RemediationPanel";
@@ -28,6 +30,7 @@ function pickDefaultRun(runs: Investigation[]): Investigation | null {
 
 export function IncidentWorkspace({ id }: { id: string }) {
   const incident = useApi<IncidentDetail>(`incidents/${id}`);
+  const command = useApi<IncidentCommand>(`incidents/${id}/command`);
   const txns = useApi<Capture[]>("transactions?limit=2000");
   const [runId, setRunId] = useState<string | null>(null);
   const [openEvidence, setOpenEvidence] = useState<Evidence | null>(null);
@@ -60,9 +63,10 @@ export function IncidentWorkspace({ id }: { id: string }) {
       } finally {
         setBusy(null);
         incident.reload();
+        command.reload();
       }
     },
-    [incident],
+    [incident, command],
   );
 
   if (incident.error && !inc) return <ErrorState error={incident.error} onRetry={incident.reload} what="incident" />;
@@ -88,6 +92,9 @@ export function IncidentWorkspace({ id }: { id: string }) {
       </nav>
 
       <IncidentHeader incident={inc} proposals={inc.proposals} />
+
+      {command.data && <CommandSummary cmd={command.data} />}
+      {command.error && !command.data && <ErrorState error={command.error} onRetry={command.reload} what="incident command" />}
 
       <div aria-live="polite">
         {busy && (
@@ -115,10 +122,11 @@ export function IncidentWorkspace({ id }: { id: string }) {
         </label>
         {run?.finding && (
           <span className="text-sm text-fg-muted">
-            Root cause{" "}
+            AI-named driver{" "}
             <span className="font-mono text-fg">
               {run.finding.root_cause ? `${run.finding.root_cause.dimension}=${run.finding.root_cause.value}` : "none"}
             </span>{" "}
+            (a hypothesis until the server challenge supports it) ·{" "}
             · confidence {run.finding.confidence} · recommends {run.finding.recommended_action}
           </span>
         )}
@@ -163,6 +171,16 @@ export function IncidentWorkspace({ id }: { id: string }) {
             {run.finding.uncertainty}
           </p>
         </section>
+      )}
+
+      {command.data && (
+        <>
+          <HypothesesPanel cmd={command.data} />
+          <div className="grid gap-4 xl:grid-cols-2">
+            <CohortPanel cmd={command.data} />
+            <ResponsePlanPanel cmd={command.data} />
+          </div>
+        </>
       )}
 
       {studioData && (

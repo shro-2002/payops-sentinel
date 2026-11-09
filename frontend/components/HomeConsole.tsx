@@ -44,7 +44,7 @@ function IncidentList() {
             </span>
             <span className="badge badge-warn">{i.status}</span>
             <span className={i.root_cause_identified ? "badge badge-ok" : "badge badge-neutral"}>
-              {i.root_cause_identified ? "Root cause identified" : "Root cause open"}
+              {i.root_cause_identified ? "AI driver confirmed by server" : "No confirmed AI driver yet"}
             </span>
           </Link>
         </li>

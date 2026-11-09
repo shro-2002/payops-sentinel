@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     paypal_base_url: str = "https://api-m.sandbox.paypal.com"
     paypal_webhook_id: str = ""
     gemini_api_key: str = ""
-    llm_provider: str = "gemini"  # gemini | anthropic
+    llm_provider: str = "anthropic"  # anthropic | gemini
     llm_model: str = "gemini-2.5-flash"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-opus-5-5"
@@ -32,3 +32,10 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def studio_ai_mode(cfg: Settings) -> str:
+    """Studio AI assistant mode: live Claude relay, labelled REPLAY (judge mode, no key), or off."""
+    if cfg.anthropic_api_key:
+        return "live"
+    return "replay" if cfg.replay_llm else "off"

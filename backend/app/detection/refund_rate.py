@@ -75,7 +75,7 @@ def run_detector(s: Session, as_of: datetime | None = None, cfg: DetectorConfig 
     if not ev["fired"]:
         return None
     open_inc = s.scalars(select(Incident).where(
-        Incident.detector == DETECTOR, Incident.status.in_(("OPEN", "ROOT_CAUSE_IDENTIFIED")),
+        Incident.detector == DETECTOR, Incident.status.in_(("OPEN", "DRIVER_SUPPORTED", "ROOT_CAUSE_IDENTIFIED")),
         Incident.window_end > ev["window_start"]).order_by(Incident.window_end.desc())).first()
     if open_inc is not None:  # an overlapping incident is still open: same problem, no duplicate alert
         return open_inc

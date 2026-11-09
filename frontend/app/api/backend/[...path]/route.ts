@@ -17,6 +17,7 @@ const ID = "[A-Za-z0-9_-]{1,64}";
 const GET_ROUTES = [
   "incidents",
   `incidents/${ID}`,
+  `incidents/${ID}/command`,
   `evidence/${ID}/records`,
   `tool-calls/${ID}`,
   "transactions",

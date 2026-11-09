@@ -1,15 +1,19 @@
 import type { Evidence } from "./types";
 
-// Each badge says exactly what the server checked: a number matched its source, or a cause claim met / missed the
-// "explains >= 25% of excess refunds" rule. "VERIFIED" alone would suggest the narrative was checked; it is not.
-type Tone = "ok" | "bad" | "warn";
+// Each badge says exactly what the server checked. VERIFIED/UNSUPPORTED: a number matched (or not) its cited tool
+// result. Statuses from the server's independent falsification challenge (query ids S1, S2, ...) test whether a driver
+// the AI named survives; SUPPORTED means an association that survived, never a proven root cause. SHARE_* is the
+// share of excess refunds a slice carries: informational only, not a driver test.
+type Tone = "ok" | "bad" | "warn" | "neutral";
 const LABELS: Record<Evidence["verification"], { text: (qid: string) => string; tone: Tone }> = {
   VERIFIED: { text: (q) => `VALUE MATCHES ${q}`, tone: "ok" },
   UNSUPPORTED: { text: (q) => `NOT IN ${q}`, tone: "bad" },
-  CAUSE_VERIFIED: { text: () => "CAUSE · ≥25% OF EXCESS", tone: "ok" },
-  NOT_CAUSE_VERIFIED: { text: () => "RULED OUT · <25% OF EXCESS", tone: "ok" },
-  CONTRADICTED: { text: () => "CLAIMED CAUSE · <25% OF EXCESS", tone: "bad" },
-  UNRESOLVED: { text: () => "RULED OUT · ≥25% OF EXCESS (UNCHECKED)", tone: "warn" },
+  ASSOCIATION_SUPPORTED: { text: () => "SERVER CHALLENGE · SUPPORTED", tone: "ok" },
+  CONTRADICTED: { text: () => "SERVER CHALLENGE · CONTRADICTED", tone: "bad" },
+  UNRESOLVED: { text: () => "SERVER CHALLENGE · UNRESOLVED", tone: "warn" },
+  INSUFFICIENT_EVIDENCE: { text: () => "SERVER CHALLENGE · TOO FEW SAMPLES", tone: "warn" },
+  SHARE_MATERIAL: { text: () => "SHARE ONLY (INFO)", tone: "neutral" },
+  SHARE_IMMATERIAL: { text: () => "SHARE ONLY (INFO)", tone: "neutral" },
 };
 
 export function evidenceBadge(e: Pick<Evidence, "verification" | "query_id">): { text: string; className: string } {

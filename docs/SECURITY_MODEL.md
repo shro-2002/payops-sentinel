@@ -23,7 +23,7 @@
 | Customer data exposure | all data reads require the operator token (only `/config`, `/health`, `/ready`, webhook public) | `test_query_params_are_bounded` |
 
 Known gaps (documented, not hidden): no rate limiting; per-operator Basic-auth credentials are a hackathon-grade
-identity layer (use SSO/OIDC + MFA for production); webhook verification not exercised against a registered webhook; no tenant isolation.
+identity layer (use SSO/OIDC + MFA for production); webhook signature verification runs against a registered sandbox webhook (PayPal verify-webhook-signature); no tenant isolation.
 This is a sandbox hackathon MVP — not a claim of production security or regulatory compliance.
 
 ## Four-eyes identity: shared-token header bypass (audit S1, fixed 2026-11-08)

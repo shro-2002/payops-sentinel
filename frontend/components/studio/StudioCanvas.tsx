@@ -109,7 +109,7 @@ export default function StudioCanvas({ storageKey, label, data, initialState, he
           {/* AG Studio mounts its AI assistant panel only in edit mode (view mode allows just `filters`). */}
           {config?.aiEnabled && mode === "view" && (
             <button type="button" className="btn btn-primary" onClick={() => setMode("edit")}>
-              Ask AI about this incident
+              Ask AI about this incident{config.aiMode === "replay" ? " (REPLAY)" : ""}
             </button>
           )}
           <button type="button" className="btn btn-ghost" aria-pressed={mode === "edit"} onClick={() => setMode((m) => (m === "view" ? "edit" : "view"))}>
