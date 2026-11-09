@@ -148,7 +148,8 @@ class _Budget:
     """Per-operator hourly request budget plus daily token budgets (per operator and total).
 
     ponytail: in-memory, one process, resets on restart. Move to Postgres/Redis if the API runs more than one worker.
-    The token check runs before the call, so a single turn can overshoot a budget by at most one turn's usage.
+    admit() reserves a worst-case estimate under the lock, so concurrent turns can't all pass the check before any is
+    charged; settle() swaps the reservation for actual usage (or refunds it on failure). Overshoot <= one turn.
     """
 
     TOTAL = "__total__"
@@ -159,7 +160,7 @@ class _Budget:
         self._tokens: dict[str, int] = defaultdict(int)
         self._day = None
 
-    def admit(self, actor: str) -> None:
+    def admit(self, actor: str, reserve: int = 0):
         now = time.time()
         today = datetime.now(timezone.utc).date()
         with self._lock:
@@ -177,11 +178,16 @@ class _Budget:
                 raise _bad(429, "STUDIO_RATE_LIMITED", f"Studio AI is limited to {REQUESTS_PER_HOUR} requests per hour.",
                            {"Retry-After": str(int(q[0] + 3600 - now) + 1)})
             q.append(now)
+            self._tokens[actor] += reserve
+            self._tokens[self.TOTAL] += reserve
+            return today
 
-    def charge(self, actor: str, tokens: int) -> None:
+    def settle(self, actor: str, reserved: int, used: int, day) -> None:
         with self._lock:
-            self._tokens[actor] += tokens
-            self._tokens[self.TOTAL] += tokens
+            if self._day != day:  # counters rolled over mid-call: the reservation is gone, charge only actual usage
+                reserved = 0
+            self._tokens[actor] += used - reserved
+            self._tokens[self.TOTAL] += used - reserved
 
 
 BUDGET = _Budget()
@@ -286,9 +292,12 @@ def llm_turn(body: dict = Body(...), actor: str = Depends(operator)):
     mode = studio_ai_mode(cfg)
     if mode == "off":
         raise _bad(503, "LLM_NOT_CONFIGURED", "ANTHROPIC_API_KEY is not configured on the server")
-    BUDGET.admit(actor)
     if mode == "replay":
+        BUDGET.admit(actor)
         return {"data": _replay_turn(req)}
+    reserved = (len(system) + _request_chars(req)) // 4 + MAX_TOKENS  # ~4 chars/token, worst-case output
+    day = BUDGET.admit(actor, reserved)
+    used = 0
     tools = [{"name": t.name, "description": t.description, "input_schema": {"type": "object", **t.parameters}}
              for t in req.tools]
     kwargs = {"tools": tools} if tools else {}  # never tool_choice any/tool: rejected by this model
@@ -296,11 +305,13 @@ def llm_turn(body: dict = Body(...), actor: str = Depends(operator)):
         resp = _client(cfg.anthropic_api_key).messages.create(
             model=cfg.anthropic_model, max_tokens=MAX_TOKENS, system=system,
             messages=_to_anthropic_messages(req.messages), output_config={"effort": cfg.anthropic_effort}, **kwargs)
+        data = _from_anthropic(resp)
+        used = data["usage"]["input_tokens"] + data["usage"]["output_tokens"]
     except anthropic.APIError as e:
         log.warning("studio llm turn failed: %s", type(e).__name__)
         raise _bad(502, "LLM_UNAVAILABLE", "The language model request failed. Try again shortly.") from e
-    data = _from_anthropic(resp)
-    BUDGET.charge(actor, data["usage"]["input_tokens"] + data["usage"]["output_tokens"])
+    finally:
+        BUDGET.settle(actor, reserved, used, day)
     return {"data": data}
 
 

@@ -3,11 +3,13 @@
 import base64
 import gzip
 import json
+from datetime import timedelta
 from types import SimpleNamespace
 
 import anthropic
 import httpx
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.api import studio
@@ -159,6 +161,26 @@ def test_daily_token_budget_is_429(fake, monkeypatch):
     r = client.post("/api/v1/studio/llm", json=TURN, headers=AUTH)
     assert r.status_code == 429 and r.json()["detail"]["code"] == "STUDIO_TOKEN_BUDGET_EXHAUSTED"
     assert "retry-after" in r.headers and len(fake.calls) == 1
+
+
+def test_in_flight_turns_reserve_budget_before_any_charge(monkeypatch):
+    monkeypatch.setattr(studio, "TOKENS_PER_DAY_PER_OPERATOR", studio.MAX_TOKENS)
+    budget = studio._Budget()
+    day = budget.admit("op", reserve=studio.MAX_TOKENS + 5)  # first turn still in flight, nothing charged yet
+    with pytest.raises(HTTPException) as exc:
+        budget.admit("op", reserve=studio.MAX_TOKENS + 5)  # a concurrent second turn must not slip through
+    assert exc.value.status_code == 429
+    budget.settle("op", reserved=studio.MAX_TOKENS + 5, used=0, day=day)  # failed call refunds its reservation
+    budget.admit("op", reserve=studio.MAX_TOKENS + 5)
+
+
+def test_settle_after_day_rollover_charges_usage_without_refund():
+    budget = studio._Budget()
+    yesterday = budget.admit("op", reserve=5000)
+    budget._tokens.clear()  # simulate the midnight reset happening while the call was in flight
+    budget._day = yesterday + timedelta(days=1)
+    budget.settle("op", reserved=5000, used=40, day=yesterday)
+    assert budget._tokens["op"] == 40  # no negative credit from yesterday's reservation
 
 
 @pytest.fixture()
