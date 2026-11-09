@@ -10,9 +10,11 @@ test("console loads, opens incident, drills through a claim", async ({ page }) =
   await expect(page.locator(".ag-theme-mode").first()).toBeVisible();
 
   await incident.click();
-  await expect(page.getByTestId("ms-root-cause")).toBeVisible();
+  await expect(page.getByTestId("ms-driver")).toBeVisible();
   await expect(page.getByTestId("ms-corrective")).toBeVisible();
   await expect(page.getByTestId("ms-resolved")).toBeVisible();
+  await expect(page.getByTestId("incident-command")).toBeVisible();
+  await expect(page.getByTestId("hypothesis-row").first()).toBeVisible();
   await expect(page.getByText("Untrusted customer text").first()).toBeVisible();
 
   const claim = page.getByTestId("claim-row").first();

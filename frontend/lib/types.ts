@@ -26,6 +26,7 @@ export interface Incident {
   window_start: string;
   window_end: string;
   metrics: IncidentMetrics;
+  /** True when a driver the AI named was supported by the server's falsification challenge (not proof of cause). */
   root_cause_identified: boolean;
   created_at?: string;
 }
@@ -50,7 +51,15 @@ export interface Evidence {
   metric_path: string;
   claimed_value: string;
   source_value: string | null;
-  verification: "VERIFIED" | "UNSUPPORTED" | "CAUSE_VERIFIED" | "NOT_CAUSE_VERIFIED" | "CONTRADICTED" | "UNRESOLVED";
+  verification:
+    | "VERIFIED"
+    | "UNSUPPORTED"
+    | "SHARE_MATERIAL"
+    | "SHARE_IMMATERIAL"
+    | "ASSOCIATION_SUPPORTED"
+    | "CONTRADICTED"
+    | "UNRESOLVED"
+    | "INSUFFICIENT_EVIDENCE";
   reason: string | null;
 }
 
@@ -198,4 +207,84 @@ export interface ConsoleConfig {
   max_tool_calls: number;
   paypal_env: string;
   webhook_verification: string;
+}
+
+// GET /incidents/{id}/command: deterministic falsification of each "dimension=value drives the spike" hypothesis.
+export type HypothesisStatus = "ASSOCIATION_SUPPORTED" | "CONTRADICTED" | "UNRESOLVED" | "INSUFFICIENT_EVIDENCE";
+
+export interface Slice {
+  dimension: string;
+  value: string;
+}
+
+export interface RateCell {
+  captures: number;
+  refunds: number;
+  rate: number;
+}
+
+export interface HypothesisTest {
+  hypothesis: Slice;
+  status: HypothesisStatus;
+  reason: string;
+  slice: (RateCell & { comparison: RateCell; own_baseline: RateCell; z_vs_rest: number; z_vs_own_baseline: number }) | null;
+  challenges: { by: string; adjusted_lift: number; z: number; retained: number }[];
+  explained_by: Slice | null;
+  refined_to: Slice | null;
+  indistinguishable_from: Slice | null;
+  conditional_on_excluding?: Slice[];
+}
+
+export interface Money {
+  value: string;
+  currency: string;
+}
+
+export interface CohortGroup {
+  basis: string;
+  currency: string;
+  transactions: number;
+  customers: number;
+  captured_value: Money;
+  refunded_in_window: Money;
+  remaining_refundable: Money;
+  open_customer_cases: number;
+  refund_reasons: Record<string, number>;
+}
+
+export interface CohortImpact {
+  driver: Slice;
+  groups: CohortGroup[];
+  excess_estimate: { basis: string; currency: string; excess_refunds: number; excess_refund_value: Money; note: string }[];
+  summary: string;
+}
+
+export type PlanStatus = "PROPOSED" | "APPROVED" | "MANUAL_FOLLOW_UP_REQUIRED" | "IN_PROGRESS" | "EXECUTED" | "VERIFIED" | "FAILED" | "UNRESOLVED";
+
+export interface PlanItem {
+  type: string;
+  status: PlanStatus;
+  action: string;
+  why: string;
+  automated: boolean;
+  driver?: Slice;
+  case_ref?: string;
+  capture_id?: string;
+  requested?: string;
+  currency?: string;
+  paypal?: { refund_id: string | null; execution_status: string | null; verified_by_get: boolean } | null;
+}
+
+export interface IncidentCommand {
+  incident_id: string;
+  statuses: {
+    investigation: string;
+    operational_response: string;
+    paypal_execution: { status: string; cases: Record<string, number> };
+    incident: string;
+    note: string;
+  };
+  challenger: { decision: string; primary: Slice | null; supported: Slice[]; unresolved: Slice[]; tests: HypothesisTest[] };
+  impact: CohortImpact[];
+  response_plan: PlanItem[];
 }

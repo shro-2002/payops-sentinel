@@ -1,9 +1,86 @@
 # Evaluation
 
+## Competing-hypothesis evaluation (2026-11-09): current
+Harness: `backend/evals/run_hypothesis_eval.py` · raw data: [`reports/hypothesis-eval-results.json`](../reports/hypothesis-eval-results.json)
+(every run, with seed, claimed drivers, tool sequence for AI runs, cost). Synthetic scenarios only, in the
+`payops_eval` database; no PayPal calls.
+
+**Why.** The 2026-11-08 gate (a cause explains ≥ 25% of excess refunds) verified confounded slices by construction.
+Shares are normalised per dimension, so some slice always passes. The audit's counterexample (`channel=mobile`)
+became the root cause. The gate was replaced by a falsification engine
+([hypotheses.py](../backend/app/investigator/hypotheses.py)). Every driver an AI names is re-tested on the server.
+
+**Systems.**
+- A: share baseline, the prior best (largest share of excess across all five dimensions).
+- B: the original AI prompt (v1, no falsification tool, 8 calls).
+- C: the competing-hypothesis AI (falsify protocol with the `test_hypothesis` tool, 12 calls).
+- D: the falsification engine alone (`compete`).
+
+**Scenarios** (`app/ledger/synthetic.py`):
+- 7 adversarial ones at 240 captures/day, each with planted truth and decoys: confounded channel (NorthPost ships 85%
+  mobile), region vs product batch (LAMP-LED sold 80% in LATAM), high-volume segment (web carries most volume),
+  two independent causes, indistinguishable pair (every TEE-ORG ships via ParcelOne and vice versa; the correct
+  answer is to abstain), a low-sample kiosk slice, and no anomaly.
+- The 5 classic scenarios at 90 captures/day.
+
+**Metrics** (claimed drivers are scored; equivalent slices count, as for `partner_and_sku`):
+- primary-driver accuracy;
+- multi-factor recall;
+- false attribution (any claimed driver outside the truth, or any driver claimed when the right answer is to
+  abstain);
+- decoy hits;
+- appropriate abstention, and wrong abstention;
+- citation validity (AI only), tool calls, cost.
+
+Failed AI runs are scored as misses.
+
+**Protocol.** Thresholds were calibrated while looking at seeds 1–10 (dev). Seeds 11–40 were evaluated once after the
+independent code review's changes (exact tests; Bonferroni over every value scanned) and are reported as held out.
+
+| | A dev (120) | D dev (120) | A held-out (360) | D held-out (360) |
+|---|---|---|---|---|
+| Primary-driver accuracy | 0.92 | 0.87 | 0.877 | 0.883 |
+| False-attribution rate | 0.233 | 0.025 | 0.269 | 0.028 |
+| Decoy hit rate | 0.14 | 0.02 | 0.16 | 0.013 |
+| Appropriate abstention | 0.00 | 1.00 | 0.00 | 0.983 |
+| Wrong abstention | 0.00 | 0.12 | 0.00 | 0.093 |
+| Multi-factor recall | 0.35 | 0.525 | 0.283 | 0.592 |
+
+Where D loses (held out):
+- `partner_and_sku` at 90 captures: primary accuracy 0.33 vs A's 0.63. D abstains; that driver is an interaction
+  (SwiftShip-EU × EU) at low volume.
+- `channel_bug` 0.867 vs 1.0, and `region_outage` 0.933 vs 1.0.
+
+Where A fails structurally:
+- it never abstains, so the indistinguishable and no-anomaly scenarios always produce a wrong driver;
+- `adv_two_factors`: A primary 0.5 vs D 0.933.
+
+**Live AI, `claude-opus-5-5`, 1 seed per adversarial scenario (n = 7 per system).** These runs used the pre-review
+engine (z-tests, Bonferroni over hypotheses tested).
+
+| | B v1 | C falsify |
+|---|---|---|
+| Primary correct | 5/5 | 5/5 |
+| False attributions | 1/7 | 0/7 |
+| Appropriate abstention | 1/2 | 2/2 |
+| Two-cause scenario | claimed both; server confirmed 1 | claimed both; server confirmed both |
+| Numeric claims matching source | 97/100 | 114/118 |
+| Mean tool calls / cost | 7.7 / $0.14 | 11.3 / $0.23 |
+
+After the server re-test, neither B nor C kept a false attribution: the server rejected B's one. So in this design
+the AI's contribution is the investigation itself (which rivals to test, reason codes, the narrative). Correctness of
+the causal claim comes from the deterministic re-test. n is far too small to claim C > B in general.
+
+**Limitations.** Scenarios were written by us. The engine shows association, not causation. It needs volume (it
+usually abstains below ~150 captures in the window). The AI sample is tiny.
+
+---
+
+
 Harness: `backend/evals/run_eval.py` (frozen scenarios, rng seed 42, as_of 2026-11-07T18:00Z, dedicated
 `payops_eval` DB). Results: `reports/evaluation-results.json`. Run date: 2026-11-08. Python 3.12.13.
 
-## Current results (2026-11-08, after the prize-review audit)
+## Earlier results (2026-11-08, superseded share-of-excess gate)
 Raw data: [`reports/evaluation-results-2026-11-08-claude-5scen.json`](../reports/evaluation-results-2026-11-08-claude-5scen.json)
 (`python -m evals.run_eval --ai 5`, model `claude-opus-5-5`, tool budget 8). Changes since the earlier runs below:
 

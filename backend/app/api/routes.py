@@ -23,13 +23,14 @@ from sqlalchemy.orm import Session
 from app.actions import service
 from app.actions.service import ActionError
 from app.api.identity import IdentityError, resolve_operator
-from app.config import get_settings
+from app.config import get_settings, studio_ai_mode
 from app.db.models import (ActionProposal, AgentToolCall, ApprovalDecision, AuditEvent, Capture, EvidenceRecord,
                            FinancialExecution, Finding, Incident, InvestigationRun, PayPalEvent, Refund,
                            RemediationCase)
 from app.db.session import get_db
 from app.detection.refund_rate import run_detector
 from app.integrations.paypal.client import PayPalClient
+from app.incident.command import build_command
 from app.investigator.agent import run_ai_investigation, run_baseline_investigation
 from app.actions.drafting import draft_proposal
 from app.ledger.ingest import ingest_event
@@ -178,6 +179,15 @@ def get_incident(incident_id: uuid.UUID, db: Session = Depends(get_db)):
                   for a in audit]}}
 
 
+@router.get("/incidents/{incident_id}/command", dependencies=[Depends(operator)])
+def incident_command(incident_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Competing-hypothesis challenge, cohort impact, typed response plan and the three separate statuses."""
+    inc = db.get(Incident, incident_id)
+    if inc is None:
+        raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "incident not found"})
+    return {"data": build_command(db, inc)}
+
+
 @router.get("/tool-calls/{call_id}", dependencies=[Depends(operator)])
 def get_tool_call(call_id: uuid.UUID, db: Session = Depends(get_db)):
     t = db.get(AgentToolCall, call_id)
@@ -284,7 +294,8 @@ def public_config():
     c = get_settings()
     return {"data": {"writes_enabled": bool(c.operator_token), "refund_cap": to_str(c.refund_cap_minor, "USD"),
                      "llm_model": c.anthropic_model if c.llm_provider == "anthropic" else c.llm_model, "max_tool_calls": c.max_tool_calls, "paypal_env": "sandbox",
-                     "webhook_verification": "configured" if c.paypal_webhook_id else "not_configured"}}
+                     "webhook_verification": "configured" if c.paypal_webhook_id else "not_configured",
+                     "studio_ai_mode": studio_ai_mode(c)}}
 
 
 # ---- write endpoints ------------------------------------------------------------------------------

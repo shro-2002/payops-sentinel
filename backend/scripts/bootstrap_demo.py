@@ -24,7 +24,7 @@ from app.db.session import SessionLocal, engine
 from app.detection.refund_rate import run_detector
 from app.integrations.paypal.client import first_capture
 from app.ledger.ingest import CaptureDims, order_funding_source, upsert_capture
-from app.ledger.synthetic import SCENARIOS, seed
+from app.ledger.synthetic import ADVERSARIAL, seed
 
 TEST_CARD = {"card": {"number": "4111111111111111", "expiry": "2030-01", "security_code": "123",
                       "name": "Sandbox Test Buyer"}}
@@ -67,7 +67,7 @@ def main(reset: bool):
     window_end = now.replace(minute=0) + timedelta(hours=1)
     out = {"generated_at": now.isoformat(), "paypal_env": "sandbox", "live_captures": {}, "notes": []}
     with SessionLocal() as s:
-        seed(s, SCENARIOS["partner_and_sku"], window_end)
+        seed(s, ADVERSARIAL["demo_carrier_and_batch"], window_end)
         s.commit()
         caps = {}
         for spec in LIVE:

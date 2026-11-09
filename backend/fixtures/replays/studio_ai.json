@@ -1,0 +1,10 @@
+{
+  "model": "replay (no live model)",
+  "note": "Judge-mode Studio AI script, hand-built from the PayOps tool definitions in frontend/components/studio/payops-ai.ts. It is not a recording and contains no data values: the get_finding call runs for real in the browser against this database and fills the PayOps widgets.",
+  "tool": "get_finding",
+  "input": {},
+  "opening": "REPLAY of a scripted Studio AI session, not a live model call. No Anthropic key is configured, so this assistant follows a fixed script: it now calls the real get_finding tool, which loads the latest completed investigation for the open refund incident from this database and places the Evidence Inspector, Investigation Timeline and Policy Decision widgets on the page.",
+  "closing": "REPLAY of a scripted Studio AI session, not a live model call. get_finding ran against the live database and the PayOps widgets now show the latest finding. Read the labels in the Evidence Inspector: VERIFIED means the number matches the cited stored tool result; ASSOCIATION_SUPPORTED means the server's falsification test supports the slice as a suspected contributing factor (association, not proven causation); CONTRADICTED means the test rejected it (explained_by / refined_to say why); UNRESOLVED means it cannot be told apart from another slice; INSUFFICIENT_EVIDENCE means too little data; SHARE_MATERIAL / SHARE_IMMATERIAL are share-of-excess information only and never decide a driver. I cannot approve or refund anything: use the proposals panel. With an Anthropic key configured, this panel talks to Claude live instead.",
+  "closing_error": "REPLAY of a scripted Studio AI session, not a live model call. The get_finding tool returned an error (shown above), so there is no finding to display yet. Run an investigation from the incident page, then ask again.",
+  "unsupported": "REPLAY of a scripted Studio AI session, not a live model call. In judge mode this assistant only replays the incident-finding walkthrough. Configure an Anthropic key for live Studio AI."
+}

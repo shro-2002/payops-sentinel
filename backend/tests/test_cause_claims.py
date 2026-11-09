@@ -1,4 +1,5 @@
-"""Cause claims: a matching number never decides causality; the threshold rule on share_of_excess does.
+"""Cause claims are information only: the share check reports whether the cited share is right and above 0.25,
+and never decides whether a slice is a driver (that is the falsification engine's job, see test_hypotheses).
 Cases come from the prize-review audit probe (verifier-claim4.py)."""
 
 from types import SimpleNamespace as Call
@@ -6,7 +7,7 @@ from types import SimpleNamespace as Call
 import pytest
 from pydantic import ValidationError
 
-from app.investigator.evidence import CauseClaim, CauseRef, Claim, _root_cause_backed, check_cause_claim, check_claim
+from app.investigator.evidence import CauseClaim, Claim, check_cause_claim, check_claim
 
 RESULT = {"dimension": "fulfillment_partner", "by_value": {
     "SwiftShip-EU": {"current_rate": 0.3111, "baseline_rate": 0.30, "current_refunds": 14, "share_of_excess": 0.6212},
@@ -26,14 +27,14 @@ def test_audit_counterexample_false_narrative_with_true_number():
     assert check_claim(narrative, CALLS)[0] == "VERIFIED"
     # The structured version of "NOT a cause" gets no pass: the slice explains 62% of the excess.
     verdict, src, reason = check_cause_claim(cause(is_cause=False), CALLS)
-    assert verdict == "UNRESOLVED" and src == "0.6212" and ">= 0.25" in reason
+    assert verdict == "SHARE_MATERIAL" and src == "0.6212" and "not a driver test" in reason
 
 
-def test_true_cause_and_true_non_cause_verify():
-    assert check_cause_claim(cause(), CALLS)[0] == "CAUSE_VERIFIED"
-    assert check_cause_claim(cause(share="62.12%"), CALLS)[0] == "CAUSE_VERIFIED"
-    assert check_cause_claim(cause("NorthPost", False, "0.0412"), CALLS)[0] == "NOT_CAUSE_VERIFIED"
-    assert check_cause_claim(cause("NorthPost", True, "0.0412"), CALLS)[0] == "CONTRADICTED"
+def test_share_check_reports_share_only():
+    assert check_cause_claim(cause(), CALLS)[0] == "SHARE_MATERIAL"
+    assert check_cause_claim(cause(share="62.12%"), CALLS)[0] == "SHARE_MATERIAL"
+    assert check_cause_claim(cause("NorthPost", False, "0.0412"), CALLS)[0] == "SHARE_IMMATERIAL"
+    assert check_cause_claim(cause("NorthPost", True, "0.0412"), CALLS)[0] == "SHARE_IMMATERIAL"
 
 
 @pytest.mark.parametrize("claim, why", [
@@ -56,11 +57,3 @@ def test_cause_claim_must_cite_top_contributors():
 def test_dimension_must_be_from_the_enum():
     with pytest.raises(ValidationError):
         cause(dim="customer_mood")
-
-
-def test_root_cause_needs_a_passing_cause_claim_on_that_exact_slice():
-    rc = CauseRef(dimension="fulfillment_partner", value="SwiftShip-EU")
-    assert _root_cause_backed(rc, [(cause(), "CAUSE_VERIFIED")])
-    assert not _root_cause_backed(rc, [(cause(is_cause=False), "UNRESOLVED")])
-    assert not _root_cause_backed(rc, [(cause("NorthPost", False, "0.0412"), "NOT_CAUSE_VERIFIED")])
-    assert not _root_cause_backed(rc, [])  # numeric claims alone (even baseline_rate) never back a root cause

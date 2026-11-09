@@ -219,6 +219,23 @@ def paypal_order_lookup(s: Session, inc: Incident, args: dict) -> dict:
                            "refunded_matches": paypal_refunded == ledger["refunded"]}}
 
 
+def test_hypothesis(s: Session, inc: Incident, args: dict) -> dict:
+    """Try to falsify 'dimension=value drives the spike': sample size, lift vs rest and own baseline, persistence
+    within every other dimension, category drill-down. Returns status + every number used."""
+    from app.investigator.hypotheses import challenge_hypothesis
+    col_name = args.get("dimension")
+    _dim(args)
+    exclude = None
+    if args.get("exclude_dimension") is not None:
+        _dim({"dimension": args["exclude_dimension"]})
+        exclude = (args["exclude_dimension"], _value(args, "exclude_value"))
+        # Only a driver the server itself supports may be excluded: no shopping for a convenient exclusion.
+        if challenge_hypothesis(s, inc, *exclude)["status"] != "ASSOCIATION_SUPPORTED":
+            raise ToolArgumentError(f"exclude {exclude[0]}={exclude[1]} is not an ASSOCIATION_SUPPORTED driver; "
+                                    "only a supported driver can be excluded")
+    return challenge_hypothesis(s, inc, col_name, _value(args), exclude)
+
+
 TOOLS: dict[str, Callable[[Session, Incident, dict], dict]] = {
     "get_incident_context": get_incident_context,
     "slice_metric": slice_metric,
@@ -229,9 +246,22 @@ TOOLS: dict[str, Callable[[Session, Incident, dict], dict]] = {
     "get_transaction": get_transaction,
     "list_related_events": list_related_events,
     "paypal_order_lookup": paypal_order_lookup,
+    "test_hypothesis": test_hypothesis,
 }
 
 TOOL_SPECS = [
+    {"name": "test_hypothesis",
+     "description": "Deterministic falsification test of 'dimension=value is driving the refund spike'. Checks sample "
+                    "size, refund-rate lift vs the rest of the window and vs the slice's own baseline (z-tests), "
+                    "whether the lift persists within every other dimension (Mantel-Haenszel), and drills a category "
+                    "down to SKUs. status: ASSOCIATION_SUPPORTED | CONTRADICTED (explained_by / refined_to say by "
+                    "what) | UNRESOLVED (indistinguishable_from) | INSUFFICIENT_EVIDENCE. Optional exclude_dimension + "
+                    "exclude_value: an ALREADY SUPPORTED driver in another dimension; the test then runs on captures "
+                    "outside it, so a second independent driver isn't hidden by the first one's refunds.",
+     "parameters": {"type": "object", "properties": {
+         "dimension": {"type": "string", "enum": sorted(DIMENSIONS)}, "value": {"type": "string"},
+         "exclude_dimension": {"type": "string", "enum": sorted(DIMENSIONS)}, "exclude_value": {"type": "string"}},
+         "required": ["dimension", "value"]}},
     {"name": "get_incident_context", "description": "Detector numbers and windows for this incident.",
      "parameters": {"type": "object", "properties": {}}},
     {"name": "slice_metric", "description": "Captures, refunds, refund_rate per value of a dimension in a window.",

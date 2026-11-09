@@ -10,6 +10,8 @@ import { apiGet } from "./api";
 export interface StudioConfig {
   licenseKey: string | undefined;
   aiEnabled: boolean;
+  /** "replay" in judge mode: the assistant serves a scripted, labelled session instead of calling Claude. */
+  aiMode: "live" | "replay" | "off";
 }
 
 const ENV_KEY = process.env.NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY || undefined;
@@ -18,9 +20,12 @@ const AI_FORCED_OFF = process.env.NEXT_PUBLIC_STUDIO_AI === "0";
 let cached: Promise<StudioConfig> | null = null;
 
 function load(): Promise<StudioConfig> {
-  cached ??= apiGet<{ license_key: string | null; ai_enabled: boolean }>("studio/config").then(
-    (c) => ({ licenseKey: c.license_key ?? ENV_KEY, aiEnabled: c.ai_enabled && !AI_FORCED_OFF }),
-    () => ({ licenseKey: ENV_KEY, aiEnabled: false }),
+  cached ??= apiGet<{ license_key: string | null; ai_enabled: boolean; ai_mode?: StudioConfig["aiMode"] }>("studio/config").then(
+    (c) => {
+      const aiEnabled = c.ai_enabled && !AI_FORCED_OFF;
+      return { licenseKey: c.license_key ?? ENV_KEY, aiEnabled, aiMode: aiEnabled ? (c.ai_mode ?? "live") : "off" };
+    },
+    () => ({ licenseKey: ENV_KEY, aiEnabled: false, aiMode: "off" }),
   );
   return cached;
 }

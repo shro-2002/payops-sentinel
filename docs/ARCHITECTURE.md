@@ -10,7 +10,7 @@ flowchart LR
   ING --> DB[(PostgreSQL\nledger + investigations + actions + audit)]
   DB --> DET[Refund-rate detector\ndeterministic SQL]
   DET --> INC[Incident]
-  INC --> AI[AI investigator\nGemini, read-only tools, <=8 calls]
+  INC --> AI[AI investigator\nClaude (Gemini optional), read-only tools, <=12 calls]
   INC --> BL[Baseline investigator\nfixed queries]
   AI --> EV[Evidence checker\nclaim = query_id + path + value]
   EV --> F[Finding\nverified / unsupported claims]

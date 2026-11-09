@@ -1,16 +1,22 @@
 # BUILD STATUS (survives context resets — update at the end of every graph node)
 
-Last update: 2026-11-08 17:30 IST · branch `feature/payops-sentinel` · publish copy `shro-2002/payops-sentinel`
+Last update: 2026-11-09 13:00 IST · branch `feature/grand-prize-hypotheses` (uncommitted) · publish copy
+`shro-2002/payops-sentinel` (not yet updated)
 
 ## State of the world
-- Postgres: `docker compose up -d db` (:5433). Demo world re-bootstrapped 17:20 IST: "Refund rate 21.5% vs 3.4%
-  baseline (20 refunds / 93 captures)"; live captures in `reports/sandbox-bootstrap.json`; cases RC-2041 (legit $12)
-  and RC-2042 (prompt injection).
-- LLM: `claude-opus-5-5` (Anthropic). Judge mode `REPLAY_LLM=1` replays `backend/fixtures/replays/investigation.json`,
-  recorded in a fresh (pre-refund) world so it re-verifies 18/18 there.
-- Webhooks: registered and verified (signed `PAYMENT.CAPTURE.REFUNDED`, resend dedup; API_FEASIBILITY #11). They need
-  a public URL (quick tunnel in the demo); GET read-back is the fallback.
-- AG Studio: licensed key in `.env` (no watermark); AI module on, entry point **Ask AI about this incident**.
+- Postgres: `docker compose up -d db` (:5433). Demo world synthetic history reseeded with
+  `scripts/reseed_history demo_carrier_and_batch` (same incident id, real sandbox captures and cases untouched):
+  "Refund rate 26.8% vs 3.6% baseline (65 refunds / 243 captures)". Pre-reseed backup was written to the session
+  scratchpad (not in repo). `bootstrap_demo` now seeds the same scenario for fresh clones.
+- Falsification engine `app/investigator/hypotheses.py` replaces the 25%-share gate. Server re-tests every AI-named
+  driver (S1, S2 tool calls). Incident status DRIVER_SUPPORTED. New endpoint `GET /incidents/{id}/command`
+  (challenger, impact, typed plan, three statuses); proxy allowlist updated.
+- Judge replay `fixtures/replays/investigation.json` re-recorded on the new demo world (falsify protocol: NorthPost
+  primary, HDPH-200 secondary via conditional test, 14/14 claims). Studio AI: server-owned prompt, budgets, and a
+  scripted REPLAY session when there is no key.
+- Evals: `evals.run_hypothesis_eval` → `reports/hypothesis-eval-results.json` (dev seeds 1–10, held-out 11–40, live
+  AI n=7 per system). Backend tests 156 passing.
+- Remaining: demo video, Devpost upload (text in `docs/submission/DEVPOST.md`).
 
 ## Graph nodes
 | Node | Status | Evidence |

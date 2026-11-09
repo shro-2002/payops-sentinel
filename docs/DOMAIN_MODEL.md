@@ -8,7 +8,7 @@ Money: `BIGINT` minor units + ISO currency; `origin` ∈ SANDBOX_LIVE | SYNTHETI
   reconciliation_flag.
 - **Refund** provider_refund_id UNIQUE → Capture; reason_code.
 - **LedgerEntry** append-only signed movement; UNIQUE(source_ref, entry_type).
-- **Incident** detector output; UNIQUE(detector, window); metrics JSONB; states OPEN → ROOT_CAUSE_IDENTIFIED →
+- **Incident** detector output; UNIQUE(detector, window); metrics JSONB; states OPEN → DRIVER_SUPPORTED (a suspected driver survived the falsification engine; not proof of causation) →
   RESOLVED. `root_cause_identified` ≠ corrective action done ≠ incident resolved.
 - **InvestigationRun** AI|BASELINE, budget, tokens, latency, trace. **AgentToolCall** Qn per run, args, result.
 - **Finding** typed conclusion. **EvidenceRecord** one claim: query_id, metric_path, claimed vs source value, verdict.
