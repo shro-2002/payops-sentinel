@@ -148,7 +148,7 @@ export function IncidentWorkspace({ id }: { id: string }) {
           <ConfirmButton
             label="Run AI investigation"
             title="Start a new AI investigation?"
-            body="Takes about 20 seconds and uses one of the ~20 free LLM requests per day. Existing runs are kept."
+            body="Runs one live LLM investigation with read-only tools (about 30 seconds). Existing runs are kept."
             confirmLabel="Run AI investigation"
             variant="primary"
             disabled={!!busy}
