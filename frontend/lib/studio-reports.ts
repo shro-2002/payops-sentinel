@@ -178,7 +178,7 @@ export const INVESTIGATION_STATE: PayOpsState = {
         rootCause: {
           type: "bar-chart-grouped",
           dataMapping: { categoryKey: [f("contributors.segment")], valueKey: [f("contributors.share_of_excess", "sum")] },
-          format: title("Root-cause breakdown: share of excess refunds by segment"),
+          format: title("Share of excess refunds by segment (descriptive, not causal)"),
         },
         policy: { type: "policy-decision", dataMapping: {}, format: title("Policy Decision") },
         windowGrid: { type: "grid", dataMapping: { cols: GRID_COLS }, format: title("Captures in incident window") },
