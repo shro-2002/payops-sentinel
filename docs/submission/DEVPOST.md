@@ -132,5 +132,5 @@ investigation, falsification engine, impact engine and incident workspace were b
 
 ## Links
 - Repository: https://github.com/shro-2002/payops-sentinel
-- Demo video: _add YouTube link (≤ 3 min, public)_
+- Demo video: https://youtu.be/5SXoGS8ZJnE (2:53, public)
 - Prize categories to tick: Overall · Best Use of AG Grid (AG Studio) · Best Use of PayPal + AI
