@@ -4,7 +4,7 @@
 the anomaly, **tries to disprove its own explanations**, sizes the affected cohort and the money exposed, and runs
 safe corrective action through PayPal: a human approves it, and PayPal confirms it.
 
-> PayPal AI Hackathon 2026 · Demo video: _placeholder until uploaded_ · Everything runs against the **PayPal
+> PayPal AI Hackathon 2026 · Demo video: [YouTube (2:53)](https://youtu.be/5SXoGS8ZJnE) · Everything runs against the **PayPal
 > sandbox**; no live money. The analytical history is **synthetic** (labelled `SYNTHETIC` everywhere); the money
 > movements are **real sandbox** transactions.
 
