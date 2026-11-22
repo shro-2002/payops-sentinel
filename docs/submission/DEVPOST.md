@@ -78,7 +78,7 @@ PayPal is where the money and the ground truth live:
 ## Measured results
 Committed in `reports/hypothesis-eval-results.json`. These are synthetic scenarios we wrote. 7 adversarial incidents
 are built to fool an investigator, plus 5 classic ones. Thresholds were calibrated on seeds 1–10; seeds 11–40 are
-held out, 360 runs per system:
+held out, 360 runs per system. Both systems in this table are deterministic code; no model is called in these runs:
 
 | Held out | Share baseline (prior best) | Falsification engine |
 |---|---|---|

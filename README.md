@@ -65,7 +65,8 @@ results: [reports/hypothesis-eval-results.json](reports/hypothesis-eval-results.
 **Adversarial investigation suite.** 7 adversarial scenarios run at 240 captures/day: confounded channel, region vs
 product batch, high-volume segment, two independent causes, indistinguishable pair, low-sample slice, no anomaly.
 5 classic scenarios run at 90 captures/day. Thresholds were calibrated on seeds 1–10. Seeds 11–40 are **held out**:
-never used for calibration, reported separately (360 runs per system).
+never used for calibration, reported separately (360 runs per system). Both systems in this table are deterministic
+code: no model is called in these runs. The live-model comparison is the second table, with 7 runs per system.
 
 | Held-out seeds 11–40 (dev seeds 1–10 in brackets) | A: share baseline (prior best) | D: falsification engine |
 |---|---|---|
