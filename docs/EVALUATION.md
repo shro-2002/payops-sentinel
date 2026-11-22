@@ -36,6 +36,8 @@ Failed AI runs are scored as misses.
 
 **Protocol.** Thresholds were calibrated while looking at seeds 1–10 (dev). Seeds 11–40 were evaluated once after the
 independent code review's changes (exact tests; Bonferroni over every value scanned) and are reported as held out.
+A and D are deterministic code, so the table below involves no model calls; the live-AI runs (B and C) are reported
+separately after it.
 
 | | A dev (120) | D dev (120) | A held-out (360) | D held-out (360) |
 |---|---|---|---|---|
